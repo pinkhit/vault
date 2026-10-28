@@ -1,0 +1,29 @@
+name: familyvault
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "127.0.0.1:${FAMILYVAULT_PORT:-8080}:8080"
+    environment:
+      FAMILYVAULT_MAX_UPLOAD_BYTES: "${FAMILYVAULT_MAX_UPLOAD_BYTES:-26214400}"
+    volumes:
+      - vault-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    stop_grace_period: 20s
+    mem_limit: 512m
+    cpus: 2
+volumes:
+  vault-data:
