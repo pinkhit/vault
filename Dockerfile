@@ -31,9 +31,9 @@ COPY --from=backend /out/create-admin ./create-admin
 COPY --from=frontend /src/frontend/dist ./web
 COPY LICENSE ./LICENSE
 USER 10001:10001
-ENV FAMILYVAULT_ADDR=0.0.0.0:8080 \
-    FAMILYVAULT_CONTAINER=1 \
-    FAMILYVAULT_DATA_DIR=/data \
-    FAMILYVAULT_STATIC_DIR=/app/web
+ENV SAFEVAULT_ADDR=0.0.0.0:8080 \
+    SAFEVAULT_CONTAINER=1 \
+    SAFEVAULT_DATA_DIR=/data \
+    SAFEVAULT_STATIC_DIR=/app/web
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

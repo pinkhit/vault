@@ -1,23 +1,23 @@
-name: familyvault
+name: safevault
 services:
   app:
-    image: familyvault-app:local
+    image: safevault-app:local
     build:
       context: .
     ports:
-      - "127.0.0.1:${FAMILYVAULT_PORT:-8080}:8080"
+      - "127.0.0.1:${SAFEVAULT_PORT:-8080}:8080"
     environment:
-      FAMILYVAULT_MAX_UPLOAD_BYTES: "${FAMILYVAULT_MAX_UPLOAD_BYTES:-26214400}"
-      FAMILYVAULT_SESSION_TTL: "${FAMILYVAULT_SESSION_TTL:-8h}"
-      FAMILYVAULT_SESSION_IDLE_TTL: "${FAMILYVAULT_SESSION_IDLE_TTL:-30m}"
-      FAMILYVAULT_COOKIE_SECURE: "${FAMILYVAULT_COOKIE_SECURE:-false}"
-      FAMILYVAULT_PUBLIC_ORIGIN: "${FAMILYVAULT_PUBLIC_ORIGIN:-}"
-      FAMILYVAULT_HOST_STORAGE_FILE: "${FAMILYVAULT_HOST_STORAGE_FILE:-/run/familyvault-host/storage.json}"
+      SAFEVAULT_MAX_UPLOAD_BYTES: "${SAFEVAULT_MAX_UPLOAD_BYTES:-26214400}"
+      SAFEVAULT_SESSION_TTL: "${SAFEVAULT_SESSION_TTL:-8h}"
+      SAFEVAULT_SESSION_IDLE_TTL: "${SAFEVAULT_SESSION_IDLE_TTL:-30m}"
+      SAFEVAULT_COOKIE_SECURE: "${SAFEVAULT_COOKIE_SECURE:-false}"
+      SAFEVAULT_PUBLIC_ORIGIN: "${SAFEVAULT_PUBLIC_ORIGIN:-}"
+      SAFEVAULT_HOST_STORAGE_FILE: "${SAFEVAULT_HOST_STORAGE_FILE:-/run/safevault-host/storage.json}"
     volumes:
       - vault-data:/data
       - type: bind
         source: ./.runtime/host-storage
-        target: /run/familyvault-host
+        target: /run/safevault-host
         read_only: true
     read_only: true
     tmpfs:

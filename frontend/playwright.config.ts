@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
 // Isolated synthetic data, separate from the developer's library. Kept in OS temp.
-const dataDir = mkdtempSync(join(tmpdir(), 'familyvault-browser-'));
+const dataDir = mkdtempSync(join(tmpdir(), 'safevault-browser-'));
 // macOS can point at an isolated Linux Compose test app for bounded PDF rendering.
 const externalURL = process.env.PW_BASE_URL;
 if (externalURL) {
@@ -36,15 +36,15 @@ export default defineConfig({
         reuseExistingServer: false,
         timeout: 120_000,
         env: {
-          FAMILYVAULT_ADDR: '127.0.0.1:18080',
-          FAMILYVAULT_DATA_DIR: dataDir,
-          FAMILYVAULT_STATIC_DIR: '../frontend/dist',
-          FAMILYVAULT_CONTAINER: '',
-          FAMILYVAULT_COOKIE_SECURE: 'false',
-          FAMILYVAULT_PUBLIC_ORIGIN: '',
-          FAMILYVAULT_SESSION_TTL: '8h',
-          FAMILYVAULT_SESSION_IDLE_TTL: '30m',
-          FAMILYVAULT_MAX_UPLOAD_BYTES: '26214400',
+          SAFEVAULT_ADDR: '127.0.0.1:18080',
+          SAFEVAULT_DATA_DIR: dataDir,
+          SAFEVAULT_STATIC_DIR: '../frontend/dist',
+          SAFEVAULT_CONTAINER: '',
+          SAFEVAULT_COOKIE_SECURE: 'false',
+          SAFEVAULT_PUBLIC_ORIGIN: '',
+          SAFEVAULT_SESSION_TTL: '8h',
+          SAFEVAULT_SESSION_IDLE_TTL: '30m',
+          SAFEVAULT_MAX_UPLOAD_BYTES: '26214400',
         },
       },
 });

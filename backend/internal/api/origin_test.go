@@ -111,7 +111,7 @@ func TestTLSProxySessionCSRFAndDocumentAuthorization(t *testing.T) {
 		t.Fatal("HTTPS login", login.StatusCode)
 	}
 	cookies := login.Cookies()
-	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].Name != "__Host-familyvault_session" || cookies[0].Domain != "" || cookies[0].Path != "/" || cookies[0].SameSite != http.SameSiteStrictMode {
+	if len(cookies) != 1 || !cookies[0].Secure || !cookies[0].HttpOnly || cookies[0].Name != "__Host-safevault_session" || cookies[0].Domain != "" || cookies[0].Path != "/" || cookies[0].SameSite != http.SameSiteStrictMode {
 		t.Fatal("unsafe HTTPS session cookie")
 	}
 	var session auth.Session

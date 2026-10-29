@@ -80,7 +80,7 @@ it('submits only on request, renders shared sources/references and clears to the
   ).toHaveAttribute('href', `/api/documents/${document.id}/download`);
   expect(screen.getByText('Invoice DEMO-2026-001')).toBeVisible();
   expect(screen.getByText(/Page 3 · Section 2/)).toBeVisible();
-  expect(screen.getByText('Text searchable')).toBeVisible();
+  expect(screen.queryByText('Text searchable')).not.toBeInTheDocument();
   expect(screen.queryByText('Library content')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Clear search' }));
   expect(screen.getByText('Library content')).toBeVisible();
@@ -96,13 +96,17 @@ it('renders filenames and snippets as text without creating active elements', as
     results: [{ ...hit, document: { ...document, name }, snippet }],
     has_more: false,
   });
-  const { container } = render(view());
+  render(view());
   submit('script');
   expect(await screen.findByText(snippet)).toBeVisible();
   expect(
     screen.getByRole('link', { name: `Download ${name}` }),
   ).toHaveAttribute('href', `/api/documents/${document.id}/download`);
-  expect(container.querySelector('script, img, svg')).toBeNull();
+  expect(
+    screen
+      .getByRole('list', { name: 'Matching documents' })
+      .querySelector('script, img, svg'),
+  ).toBeNull();
 });
 
 it('aborts old queries and ignores late responses after a newer search or clear', async () => {
@@ -233,9 +237,9 @@ it('refreshes indexing status and keeps metadata-only results downloadable', asy
     });
   render(view());
   submit('invoice');
-  expect(await screen.findByText('Indexing text…')).toBeVisible();
+  expect(await screen.findByText('Preparing search…')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Refresh results' }));
-  expect(await screen.findByText('No searchable text')).toBeVisible();
+  expect(await screen.findByText('Filename search only')).toBeVisible();
   expect(
     screen.getByRole('link', { name: 'Download Shared invoice.pdf' }),
   ).toHaveAttribute('href', `/api/documents/${document.id}/download`);

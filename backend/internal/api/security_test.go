@@ -48,7 +48,7 @@ func jsonRequest(t *testing.T, handler http.Handler, method, path, body string, 
 }
 
 func fixtureIdentity() *identity {
-	return &identity{cookie: &http.Cookie{Name: "familyvault_session", Value: fixtureToken}, csrf: fixtureCSRF}
+	return &identity{cookie: &http.Cookie{Name: "safevault_session", Value: fixtureToken}, csrf: fixtureCSRF}
 }
 
 func createMember(t *testing.T, a *API, username string) auth.User {
@@ -120,7 +120,7 @@ func TestUnauthenticatedEndpointsFailClosed(t *testing.T) {
 			for _, invalid := range []string{"", "forged", strings.Repeat("a", 64)} {
 				var actor *identity
 				if invalid != "" {
-					actor = &identity{cookie: &http.Cookie{Name: "familyvault_session", Value: invalid}, csrf: fixtureCSRF}
+					actor = &identity{cookie: &http.Cookie{Name: "safevault_session", Value: invalid}, csrf: fixtureCSRF}
 				}
 				response := asUser(t, a.Handler(""), tc.method, tc.path, nil, "", actor, nil)
 				requireStatus(t, response, 401)

@@ -1,4 +1,4 @@
-# FamilyVault threat model
+# SafeVault threat model
 
 **Authenticated development and private HTTPS demonstration. Synthetic documents only.** Protected APIs require a live server-side session and document authorization. Native Tailscale Serve forwards private HTTPS to the loopback-only Docker port; tailnet membership does not replace application authentication. Funnel and public router forwarding remain outside this deployment.
 

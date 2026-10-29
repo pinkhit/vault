@@ -1,17 +1,17 @@
 import type { IndexingState } from './api';
 
-const labels: Record<IndexingState, string> = {
-  pending: 'Indexing queued',
-  processing: 'Indexing text…',
-  ready: 'Text searchable',
-  failed: 'Text indexing failed',
-  unsupported: 'No searchable text',
+const labels = {
+  pending: 'Preparing search',
+  processing: 'Preparing search…',
+  failed: 'Text search unavailable',
+  unsupported: 'Filename search only',
 };
 
 export default function IndexingBadge({ status }: { status?: IndexingState }) {
+  if (!status || status === 'ready') return null;
   return (
     <span className={`indexing-badge indexing-${status ?? 'unknown'}`}>
-      {status ? labels[status] : 'Indexing status unavailable'}
+      {labels[status]}
     </span>
   );
 }

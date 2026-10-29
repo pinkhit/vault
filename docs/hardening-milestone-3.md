@@ -60,7 +60,7 @@ Three deliberate regressions were tested only in disposable container copies: by
 
 Verification: Go formatting, vet and the complete race suite passed (**80.1% combined statement coverage**); frontend formatting, **37 frontend tests**, strict TypeScript/production build, **four Chrome flows** and the Compose recovery smoke test passed. The production frontend bundle is unchanged. Hosted CI was not run. The pre-existing README changes were preserved; no commits or pushes were made.
 
-The randomly named smoke project cleaned up successfully. Docker refused both normal and forced removal of the separate `familyvault-structural-check` browser container, reporting a zombie PID; that synthetic container/volume remain pending cleanup after Docker recovers. Docker Desktop was not restarted because that would interrupt the regular application.
+The randomly named smoke project cleaned up successfully. Docker refused both normal and forced removal of the separate `safevault-structural-check` browser container, reporting a zombie PID; that synthetic container/volume remain pending cleanup after Docker recovers. Docker Desktop was not restarted because that would interrupt the regular application.
 
 ## Document deletion follow-up
 

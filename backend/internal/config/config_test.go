@@ -18,9 +18,9 @@ func TestLoad(t *testing.T) {
 		{"huge limit", "", "", "1073741825", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("FAMILYVAULT_ADDR", tc.addr)
-			t.Setenv("FAMILYVAULT_CONTAINER", tc.container)
-			t.Setenv("FAMILYVAULT_MAX_UPLOAD_BYTES", tc.max)
+			t.Setenv("SAFEVAULT_ADDR", tc.addr)
+			t.Setenv("SAFEVAULT_CONTAINER", tc.container)
+			t.Setenv("SAFEVAULT_MAX_UPLOAD_BYTES", tc.max)
 			_, err := Load()
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%t error=%v", tc.valid, err)
@@ -31,11 +31,11 @@ func TestLoad(t *testing.T) {
 
 func TestAuthenticationSettings(t *testing.T) {
 	for _, test := range []struct{ key, value string }{
-		{"FAMILYVAULT_SESSION_TTL", "0s"},
-		{"FAMILYVAULT_SESSION_TTL", "48h"},
-		{"FAMILYVAULT_SESSION_IDLE_TTL", "0s"},
-		{"FAMILYVAULT_SESSION_IDLE_TTL", "9h"},
-		{"FAMILYVAULT_COOKIE_SECURE", "invalid"},
+		{"SAFEVAULT_SESSION_TTL", "0s"},
+		{"SAFEVAULT_SESSION_TTL", "48h"},
+		{"SAFEVAULT_SESSION_IDLE_TTL", "0s"},
+		{"SAFEVAULT_SESSION_IDLE_TTL", "9h"},
+		{"SAFEVAULT_COOKIE_SECURE", "invalid"},
 	} {
 		t.Run(test.key+test.value, func(t *testing.T) {
 			t.Setenv(test.key, test.value)
@@ -71,8 +71,8 @@ func TestPublicOriginRequiresExactHTTPSAndSecureCookies(t *testing.T) {
 		{" https://vault.example.ts.net", "true", false},
 	} {
 		t.Run(test.origin+"/secure="+test.secure, func(t *testing.T) {
-			t.Setenv("FAMILYVAULT_PUBLIC_ORIGIN", test.origin)
-			t.Setenv("FAMILYVAULT_COOKIE_SECURE", test.secure)
+			t.Setenv("SAFEVAULT_PUBLIC_ORIGIN", test.origin)
+			t.Setenv("SAFEVAULT_COOKIE_SECURE", test.secure)
 			config, err := Load()
 			if (err == nil) != test.valid {
 				t.Fatalf("valid=%t error=%v", test.valid, err)

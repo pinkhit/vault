@@ -155,7 +155,7 @@ func TestUploadDownloadIntegrationAndRestart(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Checksum-SHA256", checksum)
-	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
+	req.AddCookie(&http.Cookie{Name: "safevault_session", Value: fixtureToken})
 	req.Header.Set("X-CSRF-Token", fixtureCSRF)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -187,7 +187,7 @@ func TestUploadDownloadIntegrationAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
+	req.AddCookie(&http.Cookie{Name: "safevault_session", Value: fixtureToken})
 	response, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -507,7 +507,7 @@ func TestEndpointsAndLocalBoundary(t *testing.T) {
 func TestProcessTerminationRecovery(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestCrashHelper$")
-	cmd.Env = append(os.Environ(), "FAMILYVAULT_CRASH_TEST_DIR="+dir)
+	cmd.Env = append(os.Environ(), "SAFEVAULT_CRASH_TEST_DIR="+dir)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("helper: %v %s", err, output)
 	}
@@ -565,7 +565,7 @@ func TestProcessTerminationRecovery(t *testing.T) {
 }
 
 func TestCrashHelper(t *testing.T) {
-	dir := os.Getenv("FAMILYVAULT_CRASH_TEST_DIR")
+	dir := os.Getenv("SAFEVAULT_CRASH_TEST_DIR")
 	if dir == "" {
 		t.Skip("subprocess helper")
 	}

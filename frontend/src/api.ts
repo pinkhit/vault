@@ -110,6 +110,21 @@ export class APIError extends Error {
 // Neither value is stored in localStorage or sessionStorage.
 let csrfToken = '';
 
+function responseError(
+  body: unknown,
+  status: number,
+  id: string | null,
+): APIError {
+  const message =
+    typeof body === 'object' &&
+    body !== null &&
+    'error' in body &&
+    typeof body.error === 'string'
+      ? body.error
+      : `Request failed (${status}).`;
+  return new APIError(`${message}${id ? ` Reference: ${id}` : ''}`, status);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.method && !['GET', 'HEAD'].includes(init.method) && csrfToken) {
@@ -122,17 +137,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => null);
-    const message =
-      typeof body === 'object' &&
-      body !== null &&
-      'error' in body &&
-      typeof body.error === 'string'
-        ? body.error
-        : `Request failed (${response.status}).`;
-    const id = response.headers.get('X-Request-ID');
-    throw new APIError(
-      `${message}${id ? ` Reference: ${id}` : ''}`,
+    throw responseError(
+      body,
       response.status,
+      response.headers.get('X-Request-ID'),
     );
   }
   if (response.status === 204) return undefined as T;
@@ -189,7 +197,12 @@ export const searchDocuments = (
   return request<SearchPage>(`/api/search?${parameters}`, { signal });
 };
 
-export async function uploadDocument(file: File): Promise<DocumentRecord> {
+export async function uploadDocument(
+  file: File,
+  onProgress?: (percent: number | null) => void,
+): Promise<DocumentRecord> {
+  // Capture this session's token before hashing; a later sign-in must not inherit this upload.
+  const token = csrfToken;
   const digest = await crypto.subtle.digest(
     'SHA-256',
     await file.arrayBuffer(),
@@ -199,14 +212,43 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
   ).join('');
   const body = new FormData();
   body.append('file', file);
-  const document = await request<DocumentRecord>('/api/documents', {
-    method: 'POST',
-    body,
-    headers: { 'X-Checksum-SHA256': checksum },
+  const document = await new Promise<DocumentRecord>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (event) => {
+      onProgress?.(
+        event.lengthComputable && event.total > 0
+          ? Math.min(100, Math.floor((event.loaded / event.total) * 100))
+          : null,
+      );
+    });
+    xhr.open('POST', '/api/documents');
+    xhr.withCredentials = true;
+    xhr.responseType = 'json';
+    if (token) xhr.setRequestHeader('X-CSRF-Token', token);
+    xhr.setRequestHeader('X-Checksum-SHA256', checksum);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300)
+        resolve(xhr.response as DocumentRecord);
+      else
+        reject(
+          responseError(
+            xhr.response,
+            xhr.status,
+            xhr.getResponseHeader('X-Request-ID'),
+          ),
+        );
+    };
+    xhr.onerror = xhr.onabort = () =>
+      reject(
+        new Error(
+          'Upload interrupted. Refresh your library before trying again.',
+        ),
+      );
+    xhr.send(body);
   });
   if (document.sha256 !== checksum) {
     throw new Error(
-      'Upload was stored but checksum confirmation failed. Refresh before retrying.',
+      'Your file was uploaded, but verification failed. Refresh your library before trying again.',
     );
   }
   return document;

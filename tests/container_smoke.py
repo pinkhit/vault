@@ -20,17 +20,17 @@ def main():
     # The host CLI must support the application's STRICT tables (SQLite >=3.37).
     subprocess.run(["sqlite3", ":memory:", "CREATE TABLE compatibility(n INTEGER) STRICT;"],
                    check=True, capture_output=True)
-    project = "familyvault-smoke-" + secrets.token_hex(4)
+    project = "safevault-smoke-" + secrets.token_hex(4)
     compose = ["docker", "compose", "-p", project]
     environment = dict(
         os.environ,
-        FAMILYVAULT_PORT="0",
-        FAMILYVAULT_COOKIE_SECURE="false",
-        FAMILYVAULT_PUBLIC_ORIGIN="",
-        FAMILYVAULT_SESSION_TTL="8h",
-        FAMILYVAULT_SESSION_IDLE_TTL="30m",
-        FAMILYVAULT_MAX_UPLOAD_BYTES="26214400",
-        FAMILYVAULT_HOST_STORAGE_FILE="/nonexistent/disabled-for-isolated-test.json",
+        SAFEVAULT_PORT="0",
+        SAFEVAULT_COOKIE_SECURE="false",
+        SAFEVAULT_PUBLIC_ORIGIN="",
+        SAFEVAULT_SESSION_TTL="8h",
+        SAFEVAULT_SESSION_IDLE_TTL="30m",
+        SAFEVAULT_MAX_UPLOAD_BYTES="26214400",
+        SAFEVAULT_HOST_STORAGE_FILE="/nonexistent/disabled-for-isolated-test.json",
     )
 
     def run(*arguments, **options):
@@ -67,7 +67,7 @@ def main():
                     return response.code, response.read(), response.headers
 
         status, homepage, _ = request("GET", "/")
-        assert status == 200 and b"FamilyVault" in homepage
+        assert status == 200 and b"SafeVault" in homepage
         assert request("GET", "/api/documents")[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
         assert request("GET", "/api/admin/storage")[0] == 401
@@ -77,7 +77,7 @@ def main():
         assert "HttpOnly" in headers.get("Set-Cookie", "")
         csrf = json.loads(body)["csrf_token"]
 
-        boundary = "familyvault-" + secrets.token_hex(16)
+        boundary = "safevault-" + secrets.token_hex(16)
 
         def upload(name, data, media_type="application/octet-stream", checksum=None):
             payload = (
@@ -126,7 +126,7 @@ def main():
         exit_code = subprocess.run(["docker", "inspect", "--format", "{{.State.ExitCode}}", container],
                                    check=True, capture_output=True, text=True).stdout.strip()
         assert exit_code == "0", "Server did not shut down cleanly"
-        with tempfile.TemporaryDirectory(prefix="familyvault-smoke-") as snapshot:
+        with tempfile.TemporaryDirectory(prefix="safevault-smoke-") as snapshot:
             run("cp", "app:/data/.", snapshot)
             database = Path(snapshot) / "metadata.sqlite"
             txt_id, docx_id = document["id"], office_documents[0]["id"]
@@ -223,7 +223,7 @@ def main():
         assert request("GET", "/api/search?q=Printer")[0] == 401
         # Check Compose -> config -> middleware wiring without exposing a network proxy.
         origin = "https://vault.example.ts.net"
-        environment.update(FAMILYVAULT_PUBLIC_ORIGIN=origin, FAMILYVAULT_COOKIE_SECURE="true")
+        environment.update(SAFEVAULT_PUBLIC_ORIGIN=origin, SAFEVAULT_COOKIE_SECURE="true")
         run("up", "-d", "--wait")
         base_url = application_url()
         assert request("GET", "/api/health", headers={"Origin": ""})[0] == 200

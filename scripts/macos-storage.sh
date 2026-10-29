@@ -4,9 +4,9 @@ set -eu
 cd "$(dirname "$0")/.."
 project_dir=$(pwd)
 binary="$project_dir/.runtime/bin/host-storage"
-installed_binary="$HOME/Library/Application Support/FamilyVault/bin/host-storage"
-metrics_dir="$HOME/Library/Application Support/FamilyVault/host-storage"
-label=com.familyvault.host-storage
+installed_binary="$HOME/Library/Application Support/SafeVault/bin/host-storage"
+metrics_dir="$HOME/Library/Application Support/SafeVault/host-storage"
+label=com.safevault.host-storage
 domain="gui/$(id -u)"
 agent_file="$HOME/Library/LaunchAgents/$label.plist"
 action=${1:-start}
@@ -34,7 +34,7 @@ chmod 755 .runtime/host-storage
 docker build --target host-storage-export --build-arg "HOST_ARCH=$host_arch" --output type=local,dest=.runtime/bin .
 if test "$action" = build; then exit 0; fi
 set -- "$binary" -output-dir "$project_dir/.runtime/host-storage"
-if test -n "${FAMILYVAULT_DOCKER_DISK:-}"; then set -- "$@" -docker-disk "$FAMILYVAULT_DOCKER_DISK"; fi
+if test -n "${SAFEVAULT_DOCKER_DISK:-}"; then set -- "$@" -docker-disk "$SAFEVAULT_DOCKER_DISK"; fi
 if test "$action" = once; then exec "$@"; fi
 # launchd must not execute or write in a privacy-protected Documents folder.
 launchctl bootout "$domain/$label" 2>/dev/null || true
@@ -49,7 +49,7 @@ else
     ln -s "$metrics_dir" .runtime/host-storage
 fi
 set -- "$installed_binary" -output-dir "$metrics_dir"
-if test -n "${FAMILYVAULT_DOCKER_DISK:-}"; then set -- "$@" -docker-disk "$FAMILYVAULT_DOCKER_DISK"; fi
+if test -n "${SAFEVAULT_DOCKER_DISK:-}"; then set -- "$@" -docker-disk "$SAFEVAULT_DOCKER_DISK"; fi
 "$@" -print-launch-agent > .runtime/host-storage.plist
 plutil -lint .runtime/host-storage.plist
 mkdir -p "$HOME/Library/LaunchAgents"
