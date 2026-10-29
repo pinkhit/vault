@@ -6,16 +6,83 @@ export interface DocumentRecord {
   sha256: string;
   created_at: string;
   owner_id: string;
+  indexing_status?: IndexingState;
 }
+
+export type IndexingState =
+  'pending' | 'processing' | 'ready' | 'failed' | 'unsupported';
+
+export interface SearchHit {
+  document: DocumentRecord;
+  snippet: string;
+  match: 'filename' | 'metadata' | 'content';
+  page?: number;
+  section?: number;
+}
+
+export interface SearchPage {
+  results: SearchHit[];
+  has_more: boolean;
+}
+
+export const SEARCH_PAGE_SIZE = 20;
+export const MAX_SEARCH_OFFSET = 10000;
 export interface DocumentPage {
   documents: DocumentRecord[];
   has_more: boolean;
 }
+
+export interface Preview {
+  kind: 'text' | 'json' | 'csv' | 'image' | 'pdf' | 'xlsx';
+  text?: string;
+  rows?: string[][];
+  image?: string;
+  page?: number;
+  pages?: number;
+  sheet_name?: string;
+  truncated: boolean;
+}
+
+export const getPreview = (id: string, page: number, signal?: AbortSignal) =>
+  request<Preview>(
+    `/api/documents/${encodeURIComponent(id)}/preview?page=${page}`,
+    { signal },
+  );
 export interface Health {
   status: string;
   mode: string;
   max_upload_bytes: number;
 }
+
+export interface StorageReport {
+  host_storage?: {
+    version: number;
+    collected_at: string;
+    total_bytes: number;
+    free_bytes: number;
+    available_including_reclaimable_bytes: number;
+  } | null;
+  growth_available_bytes?: number | null;
+  documents: {
+    count: number;
+    logical_bytes: number;
+    by_type: { media_type: string; count: number; logical_bytes: number }[];
+  };
+  filesystem: {
+    source: 'container-filesystem' | 'native-filesystem';
+    checked_at: string;
+    capacity: {
+      total_bytes: number;
+      used_bytes: number;
+      available_bytes: number;
+      reserved_bytes: number;
+      low_space: boolean;
+    } | null;
+  };
+}
+
+export const getStorageOverview = (signal?: AbortSignal) =>
+  request<StorageReport>('/api/admin/storage', { signal });
 
 export interface User {
   id: string;
@@ -103,6 +170,24 @@ export const getHealth = (signal?: AbortSignal) =>
   request<Health>('/api/health', { signal });
 export const listDocuments = (offset: number, signal?: AbortSignal) =>
   request<DocumentPage>(`/api/documents?limit=50&offset=${offset}`, { signal });
+
+export const deleteDocument = (id: string) =>
+  request<void>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
+export const searchDocuments = (
+  query: string,
+  offset: number,
+  signal?: AbortSignal,
+) => {
+  const parameters = new URLSearchParams({
+    q: query,
+    limit: String(SEARCH_PAGE_SIZE),
+    offset: String(offset),
+  });
+  return request<SearchPage>(`/api/search?${parameters}`, { signal });
+};
 
 export async function uploadDocument(file: File): Promise<DocumentRecord> {
   const digest = await crypto.subtle.digest(

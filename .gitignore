@@ -8,6 +8,7 @@
 /uploads/
 /backups/
 /models/
+/.runtime/
 
 *.db
 *.db-*

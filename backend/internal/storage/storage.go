@@ -2,6 +2,7 @@
 package storage
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -159,7 +160,26 @@ func (s *Store) DiscardStage(id string) error {
 	return s.remove("staging/" + id)
 }
 
+// RemoveObject unlinks only the generated key, never a symlink's target.
+func (s *Store) RemoveObject(id string) error {
+	if !ValidID(id) {
+		return fmt.Errorf("invalid storage key")
+	}
+	if err := s.remove("objects/" + id); err != nil {
+		return err
+	}
+	return s.syncDir("objects")
+}
+
 func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, error) {
+	return s.OpenVerifiedContext(context.Background(), id, size, checksum)
+}
+
+// OpenVerifiedContext checks cancellation between bounded reads of a regular file.
+func (s *Store) OpenVerifiedContext(ctx context.Context, id string, size int64, checksum string) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !ValidID(id) {
 		return nil, fmt.Errorf("invalid storage key")
 	}
@@ -189,7 +209,7 @@ func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, 
 		return nil, ErrIntegrity
 	}
 	hash := sha256.New()
-	n, err := io.Copy(hash, f)
+	n, err := io.Copy(hash, contextReader{ctx, io.LimitReader(f, size+1)})
 	if err == nil && (n != size || hex.EncodeToString(hash.Sum(nil)) != checksum) {
 		err = ErrIntegrity
 	}
@@ -201,6 +221,18 @@ func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, 
 		return nil, err
 	}
 	return f, nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(buffer []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.reader.Read(buffer)
 }
 
 // Reconcile runs before serving requests while the exclusive data-directory lock is held.

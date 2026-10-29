@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/pinkhit/vault/backend/internal/analytics"
 	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/storage"
@@ -25,6 +26,7 @@ type API struct {
 	Documents *documents.Service
 	Log       *slog.Logger
 	Auth      *auth.Service
+	Storage   *analytics.Service
 }
 
 func (a *API) Handler(staticDir string) http.Handler {
@@ -39,10 +41,15 @@ func (a *API) Handler(staticDir string) http.Handler {
 	mux.HandleFunc("POST /api/admin/users", a.admin(a.createUser))
 	mux.HandleFunc("PATCH /api/admin/users/{id}", a.admin(a.updateUser))
 	mux.HandleFunc("GET /api/admin/audit", a.admin(a.auditEvents))
+	mux.HandleFunc("GET /api/admin/storage", a.admin(a.storageAnalytics))
 	mux.HandleFunc("GET /api/documents", a.protect(a.list))
+	mux.HandleFunc("GET /api/search", a.protect(a.search))
 	mux.HandleFunc("POST /api/documents", a.protect(a.upload))
 	mux.HandleFunc("GET /api/documents/{id}/download", a.protect(a.download))
+	mux.HandleFunc("GET /api/documents/{id}/preview", a.protect(a.preview))
+	mux.HandleFunc("GET /api/documents/{id}/indexing", a.protect(a.indexingStatus))
 	mux.HandleFunc("PATCH /api/documents/{id}", a.protect(a.rename))
+	mux.HandleFunc("DELETE /api/documents/{id}", a.protect(a.deleteDocument))
 	mux.HandleFunc("GET /api/documents/{id}/permissions", a.protect(a.grants))
 	mux.HandleFunc("PUT /api/documents/{id}/permissions/{userID}", a.protect(a.setGrant))
 	mux.HandleFunc("DELETE /api/documents/{id}/permissions/{userID}", a.protect(a.setGrant))
@@ -121,6 +128,20 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 		docs = docs[:limit]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"documents": docs, "has_more": more})
+}
+
+func (a *API) indexingStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !storage.ValidID(id) {
+		problem(w, http.StatusBadRequest, "invalid document ID")
+		return
+	}
+	progress, err := a.Documents.Indexing(r.Context(), sessionFrom(r).User, id)
+	if err != nil {
+		a.securityError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, progress)
 }
 
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {
