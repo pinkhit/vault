@@ -8,6 +8,7 @@ import {
 import { beforeEach, expect, it, vi } from 'vitest';
 import DocumentPreview from './DocumentPreview';
 import { APIError, getPreview, type Preview } from './api';
+import { deferred } from './test-utils';
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -87,20 +88,15 @@ it('navigates worksheets and clears old cells before the next response', async (
     truncated: false,
   };
   vi.mocked(getPreview).mockResolvedValueOnce(first);
-  let resolve!: (preview: Preview) => void;
-  vi.mocked(getPreview).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  const pending = deferred<Preview>();
+  vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
   render(view());
   await screen.findByRole('cell', { name: 'first sheet' });
   expect(screen.getByRole('button', { name: 'Previous sheet' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Next sheet' }));
   expect(screen.queryByText('first sheet')).not.toBeInTheDocument();
   await act(async () => {
-    resolve({
+    pending.resolve({
       ...first,
       sheet_name: 'Summary',
       rows: [['second sheet']],
@@ -126,20 +122,15 @@ it('loads PDF pages without embedded PDF content and hides old pages while fetch
     truncated: false,
   };
   vi.mocked(getPreview).mockResolvedValueOnce(first);
-  let resolve!: (preview: Preview) => void;
-  vi.mocked(getPreview).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  const pending = deferred<Preview>();
+  vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
   render(view());
   await screen.findByRole('img');
   fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
   expect(screen.queryByRole('img')).not.toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Preparing preview');
   await act(async () => {
-    resolve({ ...first, page: 2, image: 'second' });
+    pending.resolve({ ...first, page: 2, image: 'second' });
   });
   expect(screen.getByRole('img')).toHaveAttribute(
     'src',
@@ -186,19 +177,18 @@ it('returns to sign-in on expired/revoked sessions and cancels dismissed request
   const { unmount } = render(view());
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalledOnce());
   unmount();
-  let resolve!: (preview: Preview) => void;
-  vi.mocked(getPreview).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  const pending = deferred<Preview>();
+  vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
   const second = render(view());
   const signal = vi.mocked(getPreview).mock.calls.at(-1)![2]!;
   second.unmount();
   expect(signal.aborted).toBe(true);
   await act(async () => {
-    resolve({ kind: 'text', text: 'late private response', truncated: false });
+    pending.resolve({
+      kind: 'text',
+      text: 'late private response',
+      truncated: false,
+    });
   });
   expect(screen.queryByText('late private response')).not.toBeInTheDocument();
 });

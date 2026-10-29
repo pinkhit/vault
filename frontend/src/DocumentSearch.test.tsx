@@ -7,6 +7,7 @@ import {
 } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import DocumentSearch from './DocumentSearch';
+import { deferred } from './test-utils';
 import {
   APIError,
   searchDocuments,
@@ -62,14 +63,6 @@ function submit(query: string) {
     { target: { value: query } },
   );
   fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 beforeEach(() => {

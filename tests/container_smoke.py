@@ -76,46 +76,47 @@ def main():
         assert "HttpOnly" in headers.get("Set-Cookie", "")
         csrf = json.loads(body)["csrf_token"]
 
+        boundary = "familyvault-" + secrets.token_hex(16)
+
+        def upload(name, data, media_type="application/octet-stream", checksum=None):
+            payload = (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                f'Content-Type: {media_type}\r\n\r\n'
+            ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+            status, body, _ = request("POST", "/api/documents", payload,
+                "multipart/form-data; boundary=" + boundary,
+                {"X-Checksum-SHA256": checksum} if checksum is not None else None)
+            assert status == 201, "Upload failed: " + name
+            return json.loads(body)
+
+        def wait_for_indexing(record, expected, attempts=None):
+            deadline = time.monotonic() + 10
+            while True:
+                status, body, _ = request("GET", "/api/documents/" + record["id"] + "/indexing")
+                assert status == 200, "Indexing status unavailable after restart"
+                progress = json.loads(body)
+                if progress["status"] == expected:
+                    if attempts is not None:
+                        assert progress["attempts"] == attempts, "Indexing attempt count changed"
+                    return progress
+                assert progress["status"] in ("pending", "processing"), "Indexing reached an unexpected state"
+                assert time.monotonic() < deadline, "Indexing did not finish"
+                time.sleep(0.1)
+
         fixture = Path("tests/fixtures/fictional-invoice.txt").read_bytes()
         checksum = hashlib.sha256(fixture).hexdigest()
-        boundary = "familyvault-" + secrets.token_hex(16)
-        multipart = (
-            f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="file"; filename="fictional-invoice.txt"\r\n'
-            "Content-Type: text/plain\r\n\r\n"
-        ).encode() + fixture + f"\r\n--{boundary}--\r\n".encode()
-        status, body, _ = request("POST", "/api/documents", multipart,
-                                  "multipart/form-data; boundary=" + boundary,
-                                  {"X-Checksum-SHA256": checksum})
-        assert status == 201, "Upload failed"
-        document = json.loads(body)
+        document = upload("fictional-invoice.txt", fixture, "text/plain", checksum)
         assert document["sha256"] == checksum
 
         pdf = Path("tests/fixtures/fictional-preview.pdf").read_bytes()
-        pdf_body = (
-            f"--{boundary}\r\n"
-            'Content-Disposition: form-data; name="file"; filename="fictional-preview.pdf"\r\n'
-            "Content-Type: application/pdf\r\n\r\n"
-        ).encode() + pdf + f"\r\n--{boundary}--\r\n".encode()
-        status, body, _ = request("POST", "/api/documents", pdf_body,
-                                  "multipart/form-data; boundary=" + boundary)
-        assert status == 201
-        pdf_document = json.loads(body)
+        pdf_document = upload("fictional-preview.pdf", pdf, "application/pdf")
 
         formats = [
             ("fictional-preview.docx", Path("tests/fixtures/fictional-preview.docx").read_bytes(), "ready"),
             ("fictional-preview.xlsx", Path("tests/fixtures/fictional-preview.xlsx").read_bytes(), "unsupported"),
             ("malformed.docx", b"PK\x03\x04broken synthetic package", "failed"),
         ]
-        office_documents = []
-        for name, data, expected in formats:
-            payload = (
-                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
-                'Content-Type: application/octet-stream\r\n\r\n'
-            ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
-            status, body, _ = request("POST", "/api/documents", payload, "multipart/form-data; boundary=" + boundary)
-            assert status == 201
-            office_documents.append(json.loads(body))
+        office_documents = [upload(name, data) for name, data, _ in formats]
 
         # Seed exact interrupted/pending states offline; timing a live parser
         # against `docker restart` would make recovery coverage nondeterministic.
@@ -159,28 +160,10 @@ def main():
         base_url = application_url()
         assert request("GET", "/api/auth/session")[0] == 200, "Session did not survive restart"
         indexing_path = "/api/documents/" + document["id"] + "/indexing"
-        deadline = time.monotonic() + 10
-        while True:
-            status, body, _ = request("GET", indexing_path)
-            assert status == 200, "Indexing status unavailable after restart"
-            progress = json.loads(body)
-            if progress["status"] == "ready":
-                assert progress["attempts"] == 2, "Interrupted attempt was not recovered"
-                break
-            assert progress["status"] in ("pending", "processing"), "Indexing failed"
-            assert time.monotonic() < deadline, "Indexing did not finish"
-            time.sleep(0.1)
+        wait_for_indexing(document, "ready", attempts=2)
         for record, (name, original, expected) in zip(office_documents, formats):
             path = "/api/documents/" + record["id"]
-            deadline = time.monotonic() + 10
-            while True:
-                status, body, _ = request("GET", path + "/indexing")
-                assert status == 200
-                progress = json.loads(body)
-                if progress["status"] == expected:
-                    break
-                assert progress["status"] in ("pending", "processing") and time.monotonic() < deadline
-                time.sleep(0.1)
+            wait_for_indexing(record, expected, attempts=1 if expected == "ready" else None)
             status, downloaded, _ = request("GET", path + "/download")
             assert status == 200 and downloaded == original, "Office processing altered the original"
             status, body, _ = request("GET", path + "/preview" + ("?page=2" if name.endswith(".xlsx") else ""))
@@ -192,7 +175,7 @@ def main():
                 if name.endswith(".xlsx"):
                     assert preview["sheet_name"] == "Summary" and preview["rows"][0][0] == "Fictional XLSX summary 合同"
                 else:
-                    assert progress["attempts"] == 1 and "DOCX-BROWSER-2026" in preview["text"]
+                    assert "DOCX-BROWSER-2026" in preview["text"]
                     status, body, _ = request("GET", "/api/search?q=DOCX-BROWSER-2026")
                     assert status == 200 and json.loads(body)["results"][0]["document"]["id"] == record["id"]
         for query in ("Printer", "DEMO-2026-001", "fictional-invoice"):

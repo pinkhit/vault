@@ -106,7 +106,7 @@ func TestUploadJobAndAuditAreOneTransaction(t *testing.T) {
 				t.Fatal(err)
 			}
 			body, contentType := multipartBody(t, "rollback.txt", []byte("fictional original"))
-			requireStatus(t, send(a.Handler(""), "POST", "/api/documents", body, contentType, ""), 500)
+			requireStatus(t, send(t, a.Handler(""), "POST", "/api/documents", body, contentType, ""), 500)
 			for _, query := range []string{
 				"SELECT count(*) FROM documents", "SELECT count(*) FROM document_index_jobs",
 				"SELECT count(*) FROM audit_events WHERE operation = 'document.upload'",

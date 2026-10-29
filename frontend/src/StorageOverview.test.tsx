@@ -8,6 +8,7 @@ import {
 import { beforeEach, expect, it, vi } from 'vitest';
 import { APIError, getStorageOverview, type StorageReport } from './api';
 import StorageOverview from './StorageOverview';
+import { deferred } from './test-utils';
 
 vi.mock('./api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api')>()),
@@ -178,19 +179,14 @@ it('clears authentication on expiry and cancels requests when hidden', async () 
   const first = render(<StorageOverview onUnauthorized={onUnauthorized} />);
   await waitFor(() => expect(onUnauthorized).toHaveBeenCalledOnce());
   first.unmount();
-  let resolve!: (value: StorageReport) => void;
-  vi.mocked(getStorageOverview).mockImplementationOnce(
-    () =>
-      new Promise((done) => {
-        resolve = done;
-      }),
-  );
+  const pending = deferred<StorageReport>();
+  vi.mocked(getStorageOverview).mockReturnValueOnce(pending.promise);
   const second = render(<StorageOverview onUnauthorized={onUnauthorized} />);
   const signal = vi.mocked(getStorageOverview).mock.calls.at(-1)![0]!;
   second.unmount();
   expect(signal.aborted).toBe(true);
   await act(async () => {
-    resolve(report);
+    pending.resolve(report);
   });
   expect(screen.queryByText('750.0 GB used of 1.0 TB')).not.toBeInTheDocument();
 });

@@ -13,6 +13,11 @@ import (
 	"strings"
 )
 
+const (
+	MaxInputBytes = 25 << 20
+	MaxParts      = 256
+)
+
 var (
 	ErrMalformed = errors.New("invalid or unsupported Office document structure")
 	ErrLimit     = errors.New("Office document exceeds resource limits")
@@ -25,7 +30,7 @@ func Open(ctx context.Context, source io.ReaderAt, size int64) (Package, error) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if size > 25<<20 {
+	if size > MaxInputBytes {
 		return nil, ErrLimit
 	}
 	if err := checkDirectory(source, size); err != nil {
@@ -35,7 +40,7 @@ func Open(ctx context.Context, source io.ReaderAt, size int64) (Package, error) 
 	if err != nil {
 		return nil, ErrMalformed
 	}
-	if len(archive.File) > 256 {
+	if len(archive.File) > MaxParts {
 		return nil, ErrLimit
 	}
 	parts := make(map[string]*zip.File, len(archive.File))
@@ -150,7 +155,7 @@ func checkDirectory(source io.ReaderAt, size int64) error {
 	if u16(4) != 0 || u16(6) != 0 || u16(8) != u16(10) || u16(20) != 0 {
 		return ErrMalformed
 	}
-	if u16(10) > 256 || u32(12) > 64<<10 {
+	if u16(10) > MaxParts || u32(12) > 64<<10 {
 		return ErrLimit
 	}
 	if u32(16)+u32(12) != size-22 {

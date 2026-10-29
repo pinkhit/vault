@@ -7,35 +7,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
+	"github.com/pinkhit/vault/backend/internal/office"
 	"github.com/pinkhit/vault/backend/internal/testutil"
 )
-
-func parts(t *testing.T, body string) map[string]string {
-	t.Helper()
-	fixture := testutil.DOCX(t, body)
-	archive, err := zip.NewReader(bytes.NewReader(fixture), int64(len(fixture)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := map[string]string{}
-	for _, file := range archive.File {
-		reader, err := file.Open()
-		if err != nil {
-			t.Fatal(err)
-		}
-		data, err := io.ReadAll(reader)
-		reader.Close()
-		if err != nil {
-			t.Fatal(err)
-		}
-		result[file.Name] = string(data)
-	}
-	return result
-}
 
 func TestBodyTextKeepsUnicodeParagraphsAndTablesInert(t *testing.T) {
 	body := `<w:p><w:r><w:t>Invoice 合同 &lt;script&gt;</w:t></w:r><w:r><w:tab/><w:t>42</w:t><w:br/><w:t>next</w:t></w:r></w:p>` +
@@ -46,7 +23,7 @@ func TestBodyTextKeepsUnicodeParagraphsAndTablesInert(t *testing.T) {
 	if err != nil || got != "Invoice 合同 <script>\t42\nnext\n\nVisible result\n\ncell" {
 		t.Fatalf("text=%q error=%v", got, err)
 	}
-	strict := parts(t, body)
+	strict := testutil.DOCXParts(body)
 	strict["word/document.xml"] = strings.ReplaceAll(strict["word/document.xml"], wordNamespace, strictWordNamespace)
 	data = testutil.ZIP(t, strict)
 	if text, err := Text(context.Background(), bytes.NewReader(data), int64(len(data))); err != nil || text != got {
@@ -95,13 +72,13 @@ func TestMalformedPackagesAndExpansionLimits(t *testing.T) {
 		}, ErrLimit},
 		{"XML expansion", func(p map[string]string) { p["word/document.xml"] = strings.Repeat(" ", maxPartBytes+1) }, ErrLimit},
 		{"many entries", func(p map[string]string) {
-			for i := 0; i < maxParts; i++ {
+			for i := 0; i < office.MaxParts; i++ {
 				p[fmt.Sprint("extra", i)] = ""
 			}
 		}, ErrLimit},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			p := parts(t, `<w:p><w:r><w:t>safe</w:t></w:r></w:p>`)
+			p := testutil.DOCXParts(`<w:p><w:r><w:t>safe</w:t></w:r></w:p>`)
 			test.change(p)
 			data := testutil.ZIP(t, p)
 			text, err := Text(context.Background(), bytes.NewReader(data), int64(len(data)))
@@ -119,7 +96,7 @@ func TestZIPMetadataChecksumAndCancellation(t *testing.T) {
 	if _, err := Text(ctx, bytes.NewReader(data), int64(len(data))); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, err := Text(context.Background(), bytes.NewReader(data), MaxInputBytes+1); !errors.Is(err, ErrLimit) {
+	if _, err := Text(context.Background(), bytes.NewReader(data), office.MaxInputBytes+1); !errors.Is(err, ErrLimit) {
 		t.Fatal(err)
 	}
 	for _, mutate := range []func([]byte){

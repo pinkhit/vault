@@ -26,6 +26,7 @@ type identity struct {
 
 func asUser(t *testing.T, handler http.Handler, method, path string, body []byte, contentType string, actor *identity, change func(*http.Request)) *httptest.ResponseRecorder {
 	t.Helper()
+	t.Helper()
 	req := httptest.NewRequest(method, "http://localhost"+path, bytes.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)

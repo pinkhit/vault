@@ -12,10 +12,8 @@ import (
 )
 
 const (
-	MaxInputBytes       = 25 << 20
 	MaxTextBytes        = 2 << 20
 	maxPartBytes        = 4 << 20
-	maxParts            = 256
 	wordNamespace       = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 	strictWordNamespace = "http://purl.oclc.org/ooxml/wordprocessingml/main"
 	mainContentType     = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
