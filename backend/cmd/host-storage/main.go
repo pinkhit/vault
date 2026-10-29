@@ -62,7 +62,7 @@ func run() error {
 		fmt.Printf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>Label</key><string>com.familyvault.host-storage</string>
+<key>Label</key><string>com.safevault.host-storage</string>
 <key>ProgramArguments</key><array><string>%s</string><string>-output-dir</string><string>%s</string><string>-docker-disk</string><string>%s</string></array>
 <key>RunAtLoad</key><true/><key>StartInterval</key><integer>30</integer>
 <key>ProcessType</key><string>Background</string>

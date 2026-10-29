@@ -40,7 +40,7 @@ func Run(ctx context.Context, file *os.File, tool string, maxBytes int, args ...
 	bounded, cancel := context.WithCancel(ctx)
 	defer cancel()
 	output := cappedOutput{max: maxBytes, cancel: cancel}
-	arguments := append([]string{"-c", limits, "familyvault-pdf", path}, args...)
+	arguments := append([]string{"-c", limits, "safevault-pdf", path}, args...)
 	command := exec.CommandContext(bounded, "/bin/sh", arguments...)
 	command.Stdin = file
 	command.Stdout = &output

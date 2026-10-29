@@ -39,7 +39,7 @@ For block unit B and reported counts:
 - Available = B × blocks available to an unprivileged account.
 - Reserved/unavailable free space = B × (free blocks − available blocks).
 
-Used + available + reserved equals total. The bar represents **used / total**; reserved space is labelled separately. Other applications, databases and Docker resources may share the measured filesystem. These figures are neither FamilyVault-only allocated disk usage nor a quota guaranteed to this container. Low space means available bytes below **1 GiB OR 10%** of total; exact thresholds are not treated as below them. This is an advisory snapshot, not an upload reservation, host alerting agent or guarantee against running out of space.
+Used + available + reserved equals total. The bar represents **used / total**; reserved space is labelled separately. Other applications, databases and Docker resources may share the measured filesystem. These figures are neither SafeVault-only allocated disk usage nor a quota guaranteed to this container. Low space means available bytes below **1 GiB OR 10%** of total; exact thresholds are not treated as below them. This is an advisory snapshot, not an upload reservation, host alerting agent or guarantee against running out of space.
 
 ## Platform and deployment providers
 
@@ -64,12 +64,12 @@ docker compose up --build -d --wait
 ./scripts/macos-storage.sh stop
 ```
 
-`start` builds a native Intel/ARM executable using Docker (no host Go/Xcode install), generates and validates its plist, then registers `~/Library/LaunchAgents/com.familyvault.host-storage.plist`. launchd invokes it once at login and every 30 seconds under the current Mac user. The executable collects and publishes a single sample per invocation; it has no separate polling loop. Its native executable and snapshots live under `~/Library/Application Support/FamilyVault` so macOS privacy controls do not block execution/writes in a Documents checkout. The ignored `.runtime/host-storage` link points to the numeric snapshot directory for the read-only container mount. It reads no document bytes. Logs are in the same Application Support directory. Paths for this checkout are absolute; rerun setup after moving the project. The `stop` command unloads and removes only that collector's own registration. An existing registration pointing to a different executable is not overwritten. Docker Desktop and this user login must remain available; no system daemon or remote deployment is installed.
+`start` builds a native Intel/ARM executable using Docker (no host Go/Xcode install), generates and validates its plist, then registers `~/Library/LaunchAgents/com.safevault.host-storage.plist`. launchd invokes it once at login and every 30 seconds under the current Mac user. The executable collects and publishes a single sample per invocation; it has no separate polling loop. Its native executable and snapshots live under `~/Library/Application Support/SafeVault` so macOS privacy controls do not block execution/writes in a Documents checkout. The ignored `.runtime/host-storage` link points to the numeric snapshot directory for the read-only container mount. It reads no document bytes. Logs are in the same Application Support directory. Paths for this checkout are absolute; rerun setup after moving the project. The `stop` command unloads and removes only that collector's own registration. An existing registration pointing to a different executable is not overwritten. Docker Desktop and this user login must remain available; no system daemon or remote deployment is installed.
 
 The default measured file is Docker Desktop's usual `Docker.raw`. If its location was changed in Docker settings, explicitly supply the matching path:
 
 ```sh
-FAMILYVAULT_DOCKER_DISK='/Volumes/External/Docker/Docker.raw' ./scripts/macos-storage.sh start
+SAFEVAULT_DOCKER_DISK='/Volumes/External/Docker/Docker.raw' ./scripts/macos-storage.sh start
 ```
 
 The collector measures the Mac filesystem containing that disk image, including an external disk when configured. It invokes a fixed local Foundation query through macOS `osascript`; the configured path is a separate argument, never executable source. Native macOS supplies total capacity, free-now capacity and its available-including-reclaimable estimate. Used excluding reclaimable = total − available-including-reclaimable; reclaimable = available-including-reclaimable − free-now. Those three segments sum to total. macOS may change its reclaimable estimate and other storage views may categorize snapshots/caches differently. Disk values use decimal units (1 TB = 1,000 GB).
@@ -98,6 +98,6 @@ The native capacity provider and user-level collector were previously executed o
 
 ## Platform portability
 
-The FamilyVault server/frontend/extraction stack remains a Linux-container application. Host metrics are optional: a missing collector cannot block authentication, uploads, downloads, indexing, search or previews. The included host collector runs on macOS only; Windows deployment with Docker Desktop Linux containers is intended but has not been tested, and accurate Windows host capacity needs a separate native provider. Without one, host capacity/headroom are unknown and the UI uses a generic host-unavailable state. No storage migration was made for this correction.
+The SafeVault server/frontend/extraction stack remains a Linux-container application. Host metrics are optional: a missing collector cannot block authentication, uploads, downloads, indexing, search or previews. The included host collector runs on macOS only; Windows deployment with Docker Desktop Linux containers is intended but has not been tested, and accurate Windows host capacity needs a separate native provider. Without one, host capacity/headroom are unknown and the UI uses a generic host-unavailable state. No storage migration was made for this correction.
 
 For an interview, explain logical versus allocated bytes, process-visible versus host filesystems, free versus available/reserved blocks, why aggregate endpoints need administrator authorization, why failure is not zero, and why caching measurements must never cache permissions.

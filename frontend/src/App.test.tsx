@@ -1,4 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { deferred } from './test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import {
@@ -66,6 +73,32 @@ beforeEach(() => {
 });
 
 describe('document browser', () => {
+  it('shows upload percentage and waits for server confirmation before reporting success', async () => {
+    const pending = deferred<typeof document>();
+    let progress: ((percent: number | null) => void) | undefined;
+    vi.mocked(uploadDocument).mockImplementation((_file, report) => {
+      progress = report;
+      report?.(25);
+      return pending.promise;
+    });
+    render(<App />);
+    await screen.findByText('Up to 1.0 KB per file');
+    fireEvent.change(screen.getByLabelText('Choose a document'), {
+      target: { files: [new File(['example'], 'example.txt')] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
+    expect(
+      await screen.findByRole('progressbar', { name: 'Upload progress' }),
+    ).toHaveAttribute('value', '25');
+    act(() => progress?.(100));
+    expect(screen.getByText('Finishing upload…')).toBeVisible();
+    expect(
+      screen.queryByText(`${document.name} uploaded.`),
+    ).not.toBeInTheDocument();
+    await act(async () => pending.resolve(document));
+    await screen.findByText(`${document.name} uploaded.`);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
   it.each([false, true])(
     'shows deletion for owned files or admin=%s',
     async (admin) => {
@@ -245,10 +278,13 @@ describe('document browser', () => {
     expect(screen.queryByText('Private preview')).not.toBeInTheDocument();
     expect(screen.queryByText('Private snippet')).not.toBeInTheDocument();
   });
-  it('shows the empty state and development warning', async () => {
+  it('shows the empty library and SafeVault navigation', async () => {
     render(<App />);
     expect(await screen.findByText('Your library starts here')).toBeVisible();
-    expect(screen.getByText('Synthetic documents only.')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'SafeVault home' })).toBeVisible();
+    expect(
+      screen.queryByText(/Synthetic documents only/),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Upload document' }),
     ).toBeDisabled();
@@ -256,11 +292,11 @@ describe('document browser', () => {
   it('uploads a selected file, confirms integrity and refreshes the list', async () => {
     vi.mocked(uploadDocument).mockResolvedValue(document);
     render(<App />);
-    await screen.findByText('API connected');
+    await screen.findByText('Up to 1.0 KB per file');
     const file = new File(['fictional invoice'], 'invoice.txt', {
       type: 'text/plain',
     });
-    fireEvent.change(screen.getByLabelText('Choose a fictional document'), {
+    fireEvent.change(screen.getByLabelText('Choose a document'), {
       target: { files: [file] },
     });
     vi.mocked(listDocuments).mockResolvedValue({
@@ -269,16 +305,14 @@ describe('document browser', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
     expect(
-      await screen.findByText(
-        'Fictional invoice.txt uploaded. SHA-256 verified.',
-      ),
+      await screen.findByText('Fictional invoice.txt uploaded.'),
     ).toBeVisible();
     expect(
       await screen.findByRole('link', {
         name: 'Download Fictional invoice.txt',
       }),
     ).toHaveAttribute('href', `/api/documents/${document.id}/download`);
-    expect(uploadDocument).toHaveBeenCalledWith(file);
+    expect(uploadDocument).toHaveBeenCalledWith(file, expect.any(Function));
   });
   it('shows server errors and allows retrying the list', async () => {
     vi.mocked(listDocuments).mockRejectedValueOnce(
@@ -293,15 +327,15 @@ describe('document browser', () => {
   });
   it('rejects empty or oversized files before uploading', async () => {
     render(<App />);
-    await screen.findByText('API connected');
-    fireEvent.change(screen.getByLabelText('Choose a fictional document'), {
+    await screen.findByText('Up to 1.0 KB per file');
+    fireEvent.change(screen.getByLabelText('Choose a document'), {
       target: { files: [new File([], 'empty.txt')] },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Choose a non-empty file.',
     );
-    fireEvent.change(screen.getByLabelText('Choose a fictional document'), {
+    fireEvent.change(screen.getByLabelText('Choose a document'), {
       target: { files: [new File(['x'.repeat(1025)], 'large.txt')] },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
@@ -315,8 +349,8 @@ describe('document browser', () => {
   it('keeps a failed upload available for retry', async () => {
     vi.mocked(uploadDocument).mockRejectedValue(new Error('Disk is full'));
     render(<App />);
-    await screen.findByText('API connected');
-    fireEvent.change(screen.getByLabelText('Choose a fictional document'), {
+    await screen.findByText('Up to 1.0 KB per file');
+    fireEvent.change(screen.getByLabelText('Choose a document'), {
       target: { files: [new File(['test'], 'test.txt')] },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload document' }));
@@ -383,6 +417,7 @@ describe('authentication', () => {
     vi.mocked(logout).mockResolvedValue();
     render(<App />);
     await screen.findByText('Your library starts here');
+    fireEvent.click(screen.getByLabelText('Account options'));
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(
       await screen.findByRole('heading', { name: 'Sign in' }),
@@ -421,6 +456,7 @@ describe('authentication', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
     await screen.findByText('private search snippet');
+    fireEvent.click(screen.getByLabelText('Account options'));
     fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
     await screen.findByRole('heading', { name: 'Sign in' });
     expect(

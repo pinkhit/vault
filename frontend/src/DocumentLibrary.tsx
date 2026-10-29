@@ -54,7 +54,7 @@ export default function DocumentLibrary({
           </h3>
           <p>
             {offset === 0
-              ? 'Upload a fictional invoice, contract, or receipt to get started.'
+              ? 'Upload your first document to get started.'
               : 'Return to the previous page or refresh the library.'}
           </p>
         </div>
@@ -62,7 +62,7 @@ export default function DocumentLibrary({
     }
     return (
       <div className="table-wrap">
-        <table>
+        <table className="document-table">
           <thead>
             <tr>
               <th scope="col">Document</th>
@@ -79,14 +79,11 @@ export default function DocumentLibrary({
                 <td>
                   <span className="document-name">{document.name}</span>
                   <IndexingBadge status={document.indexing_status} />
-                  <details>
-                    <summary>SHA-256 checksum</summary>
-                    <code>{document.sha256}</code>
-                    <p>{document.media_type}</p>
-                  </details>
                 </td>
-                <td className="nowrap">{formatBytes(document.size)}</td>
-                <td className="nowrap">
+                <td className="nowrap" data-label="Size">
+                  {formatBytes(document.size)}
+                </td>
+                <td className="nowrap" data-label="Uploaded">
                   <time dateTime={document.created_at}>
                     {new Date(document.created_at).toLocaleDateString(
                       undefined,
@@ -95,21 +92,23 @@ export default function DocumentLibrary({
                   </time>
                 </td>
                 <td>
-                  <button
-                    className="secondary preview-button"
-                    onClick={() => onPreview(document)}
-                    aria-label={`Preview ${document.name}`}
-                  >
-                    Preview
-                  </button>
-                  <a
-                    className="download"
-                    href={`/api/documents/${document.id}/download`}
-                    aria-label={`Download ${document.name}`}
-                  >
-                    Download <span aria-hidden="true">↓</span>
-                  </a>
-                  {renderDelete?.(document)}
+                  <div className="document-actions">
+                    <button
+                      className="secondary"
+                      onClick={() => onPreview(document)}
+                      aria-label={`Preview ${document.name}`}
+                    >
+                      Preview
+                    </button>
+                    <a
+                      className="download"
+                      href={`/api/documents/${document.id}/download`}
+                      aria-label={`Download ${document.name}`}
+                    >
+                      Download <span aria-hidden="true">↓</span>
+                    </a>
+                    {renderDelete?.(document)}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -128,7 +127,7 @@ export default function DocumentLibrary({
       <div className="section-heading">
         <div>
           <h2 id="library-title">Document library</h2>
-          <p>Newest uploads first · Refresh to update indexing status</p>
+          <p>Files you own and files shared with you</p>
         </div>
         <button className="secondary" disabled={loading} onClick={onRefresh}>
           Refresh
@@ -139,7 +138,7 @@ export default function DocumentLibrary({
         <span>
           {page.documents.length > 0 && !loading && !error
             ? `Showing ${offset + 1}–${offset + page.documents.length}`
-            : 'Original files · Local storage'}
+            : 'Your documents'}
         </span>
         <div>
           <button

@@ -75,7 +75,7 @@ Backend checks ran in the local Go 1.26.10 Alpine development image because the 
 | `npm audit --audit-level=high` | **0 vulnerabilities** reported |
 | `git diff --check` | Passed |
 
-The Go module advisory is [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932), for the deprecated, unmaintained `golang.org/x/crypto/openpgp` family, with no known fixed version. FamilyVault requires `x/crypto` v0.58.0 for Argon2id but does not import or call OpenPGP; the scanner reports this at module level only. This is not a completely advisory-free dependency tree. Do not introduce those OpenPGP packages. Advisory results are a point-in-time check, not a supply-chain guarantee.
+The Go module advisory is [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932), for the deprecated, unmaintained `golang.org/x/crypto/openpgp` family, with no known fixed version. SafeVault requires `x/crypto` v0.58.0 for Argon2id but does not import or call OpenPGP; the scanner reports this at module level only. This is not a completely advisory-free dependency tree. Do not introduce those OpenPGP packages. Advisory results are a point-in-time check, not a supply-chain guarantee.
 
 Initial negative tests for the three findings failed before the fixes; only successful final reruns are listed as passes. One later Docker rerun omitted the repository fixture mount and failed to open `tests/fixtures/fictional-invoice.txt`; the complete suite was rerun with that required mount restored. The earlier [Milestone 2 verification record](verification-milestone-2.md) remains a separate historical baseline, including its original coverage/fuzz numbers. No GitHub CI run was triggered.
 

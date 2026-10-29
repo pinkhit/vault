@@ -65,9 +65,9 @@ it('labels the logical-byte vault estimate separately from measured Mac capacity
     ),
   ).toBeVisible();
   expect(
-    screen.getByText('FamilyVault (estimated)').closest('div'),
+    screen.getByText('SafeVault (estimated)').closest('div'),
   ).toHaveTextContent('≈ 4.1 KB');
-  expect(screen.getByText(/purple line marks its position/)).toBeVisible();
+  expect(screen.getByText(/green line marks its position/)).toBeVisible();
   fireEvent.click(screen.getByText('Docker volume limits'));
   expect(screen.getByText('137.4 GB')).toBeVisible();
   expect(screen.getByText(/Container filesystem/)).toBeVisible();
@@ -88,7 +88,7 @@ it.each([
       documents: { ...report.documents, logical_bytes: logical },
     });
     render(<StorageOverview onUnauthorized={onUnauthorized} />);
-    await screen.findByText('FamilyVault (estimated)');
+    await screen.findByText('SafeVault (estimated)');
     const bar = screen.getByRole('img', { name: /Mac storage:/ });
     const widths = [...bar.querySelectorAll('rect')].map((rect) =>
       Number(rect.getAttribute('width')),
@@ -122,7 +122,7 @@ it('shows unavailable capacity without fabricating zero values and keeps logical
     await screen.findByText(/Filesystem capacity is unavailable/),
   ).toHaveTextContent('Filesystem capacity is unavailable');
   expect(screen.queryByText('Volume capacity')).not.toBeInTheDocument();
-  expect(screen.getByText('Logical document bytes')).toBeVisible();
+  expect(screen.getByText('Stored file size')).toBeVisible();
   expect(screen.getByRole('table')).toBeVisible();
 });
 
@@ -203,6 +203,6 @@ it('never presents virtual free space as host space when the collector is unavai
   expect(
     screen.queryByRole('img', { name: /Mac storage:/ }),
   ).not.toBeInTheDocument();
-  expect(screen.getByText('Logical document bytes')).toBeVisible();
-  expect(screen.queryByText('FamilyVault (estimated)')).not.toBeInTheDocument();
+  expect(screen.getByText('Stored file size')).toBeVisible();
+  expect(screen.queryByText('SafeVault (estimated)')).not.toBeInTheDocument();
 });

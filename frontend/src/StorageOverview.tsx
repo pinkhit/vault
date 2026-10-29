@@ -63,7 +63,7 @@ export default function StorageOverview({
       <div className="section-heading">
         <div>
           <h2 id="storage-title">Storage overview</h2>
-          <p>Administrator access · All FamilyVault documents</p>
+          <p>Administrator access · All SafeVault documents</p>
         </div>
         <button
           className="secondary"
@@ -165,7 +165,7 @@ export default function StorageOverview({
                 </svg>
                 <dl className="storage-metrics storage-legend">
                   <div>
-                    <dt>FamilyVault (estimated)</dt>
+                    <dt>SafeVault (estimated)</dt>
                     <dd>≈ {formatDiskBytes(vaultEstimate)}</dd>
                   </div>
                   <div>
@@ -187,19 +187,15 @@ export default function StorageOverview({
                   </div>
                 </dl>
                 <p className="storage-note">
-                  Measured on the Mac volume containing Docker’s disk image.
-                  macOS may include reclaimable caches in its available-space
-                  figure; these can change. The vault segment estimates its
-                  physical share using logical document bytes. Actual allocation
-                  can differ due to database/index overhead, compression and
-                  snapshots. Other used includes remaining Mac and Docker usage,
-                  including vault overhead not counted by this estimate.
+                  The vault segment estimates its physical share using logical
+                  document bytes. Actual disk use also includes database and
+                  search data. Other used includes the rest of the device’s
+                  storage.
                 </p>
                 {tinyVault && (
                   <p className="storage-note">
                     The vault estimate is too small to see at this scale; the
-                    purple line marks its position without enlarging the
-                    segment.
+                    green line marks its position without enlarging the segment.
                   </p>
                 )}
                 {report.documents.logical_bytes > hostUsed && (
@@ -218,9 +214,7 @@ export default function StorageOverview({
               </>
             ) : (
               <p className="storage-warning" role="status">
-                Host storage is unavailable. Start the macOS storage collector
-                to measure the actual disk. Docker’s virtual capacity does not
-                establish available physical disk space.
+                Host storage is unavailable. File totals are shown below.
               </p>
             )}
             <dl className="storage-metrics">
@@ -235,9 +229,9 @@ export default function StorageOverview({
             </dl>
             <p className="storage-note">
               A conservative estimate from Mac free space now and Docker volume
-              space. This is shared space, not reserved for FamilyVault;
-              database, index and filesystem overhead also consume it.
-              Reclaimable space is excluded from this estimate.
+              space. This is shared space, not reserved for SafeVault; database,
+              index and filesystem overhead also consume it. Reclaimable space
+              is excluded from this estimate.
             </p>
             <details className="storage-details">
               <summary>Docker volume limits</summary>
@@ -285,21 +279,20 @@ export default function StorageOverview({
                 </p>
               )}
             </details>
-            <h3>FamilyVault documents</h3>
+            <h3>SafeVault documents</h3>
             <dl className="storage-metrics">
               <div>
-                <dt>Logical document bytes</dt>
+                <dt>Stored file size</dt>
                 <dd>{formatDiskBytes(report.documents.logical_bytes)}</dd>
               </div>
               <div>
-                <dt>Document count</dt>
+                <dt>File count</dt>
                 <dd>{report.documents.count.toLocaleString()}</dd>
               </div>
             </dl>
             <p className="storage-note">
-              Original file sizes recorded in SQLite. This excludes the
-              database, search index, temporary files and filesystem allocation
-              overhead.
+              Total size of your original files. This excludes the database,
+              search index, temporary files and filesystem allocation overhead.
             </p>
             {report.documents.by_type.length ? (
               <div className="table-wrap">

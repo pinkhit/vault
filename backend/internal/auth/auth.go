@@ -84,9 +84,9 @@ func normalizeUsername(name string) (string, error) {
 
 func (s *Service) CookieName() string {
 	if s.SecureCookies {
-		return "__Host-familyvault_session"
+		return "__Host-safevault_session"
 	}
-	return "familyvault_session"
+	return "safevault_session"
 }
 
 func (s *Service) Cookie(token string) *http.Cookie {

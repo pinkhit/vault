@@ -29,11 +29,9 @@ test('upload, download exact bytes and delete with confirmation on desktop and m
   await expect(page.getByText('Your library starts here')).toBeVisible();
   const fixture = '../tests/fixtures/fictional-invoice.txt';
   const original = await readFile(fixture);
-  await page.getByLabel('Choose a fictional document').setInputFiles(fixture);
+  await page.getByLabel('Choose a document').setInputFiles(fixture);
   await page.getByRole('button', { name: 'Upload document' }).click();
-  await expect(
-    page.getByText('fictional-invoice.txt uploaded. SHA-256 verified.'),
-  ).toBeVisible();
+  await expect(page.getByText('fictional-invoice.txt uploaded.')).toBeVisible();
   await page.reload();
   const link = page.getByRole('link', {
     name: 'Download fictional-invoice.txt',
@@ -46,10 +44,10 @@ test('upload, download exact bytes and delete with confirmation on desktop and m
   const saved = await download.path();
   const bytes = await readFile(saved!);
   expect(bytes.equals(original)).toBe(true);
-  await page.getByText('SHA-256 checksum').click();
-  await expect(
-    page.getByText(createHash('sha256').update(original).digest('hex')),
-  ).toBeVisible();
+  const verified = await page.request.get((await link.getAttribute('href'))!);
+  expect(verified.headers()['x-checksum-sha256']).toBe(
+    createHash('sha256').update(original).digest('hex'),
+  );
   await page.screenshot({
     path: 'test-results/documents-desktop.png',
     fullPage: true,
@@ -82,6 +80,7 @@ test('upload, download exact bytes and delete with confirmation on desktop and m
   await expect(page.getByText('Your library starts here')).toBeVisible();
   await page.reload();
   await expect(page.getByText('Your library starts here')).toBeVisible();
+  await page.getByLabel('Account options').click();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Sign in', exact: true }),
@@ -104,7 +103,7 @@ test('searches indexed text safely on desktop/mobile and clears results after re
     'Fictional UISEARCH-2026-001 invoice. <svg onload=alert(1)>Literal text</svg>',
   );
   await page
-    .getByLabel('Choose a fictional document')
+    .getByLabel('Choose a document')
     .setInputFiles({ name, mimeType: 'text/plain', buffer: original });
   const uploaded = page.waitForResponse(
     (response) =>
@@ -129,9 +128,6 @@ test('searches indexed text safely on desktop/mobile and clears results after re
     'href',
     `/api/documents/${uploadedDocument.id}/download`,
   );
-  await expect(
-    page.getByText('Text searchable', { exact: true }),
-  ).toBeVisible();
   await expect(page.getByText(/Text match · Section 1/)).toBeVisible();
   await expect(page.locator('.search-snippet')).toContainText('<svg');
   await expect(
@@ -449,7 +445,7 @@ test('shows administrator storage totals, survives metric errors and hides analy
   const initial = await (await loaded).json();
   const overview = page.getByRole('region', { name: 'Storage overview' });
   const count = overview
-    .getByText('Document count', { exact: true })
+    .getByText('File count', { exact: true })
     .locator('..')
     .locator('dd');
   await expect(count).toHaveText(initial.documents.count.toLocaleString());
@@ -458,7 +454,7 @@ test('shows administrator storage totals, survives metric errors and hides analy
       overview.getByRole('img', { name: /Mac storage:/ }),
     ).toBeVisible();
     await expect(
-      overview.getByText('FamilyVault (estimated)', { exact: true }),
+      overview.getByText('SafeVault (estimated)', { exact: true }),
     ).toBeVisible();
     await expect(
       overview.getByText('Other used (estimated)', { exact: true }),
@@ -475,15 +471,16 @@ test('shows administrator storage totals, survives metric errors and hides analy
   }
   await overview.getByText('Docker volume limits').click();
   await expect(
-    overview.getByText('Logical document bytes', { exact: true }),
+    overview.getByText('Stored file size', { exact: true }),
   ).toBeVisible();
   if (initial.filesystem.source === 'container-filesystem') {
     await expect(overview).toContainText(
       'do not measure the Mac’s physical disk',
     );
   }
+  await page.getByRole('button', { name: 'Documents', exact: true }).click();
   const payload = Buffer.from('Fictional storage count fixture');
-  await page.getByLabel('Choose a fictional document').setInputFiles({
+  await page.getByLabel('Choose a document').setInputFiles({
     name: 'storage-counter.txt',
     mimeType: 'text/plain',
     buffer: payload,
@@ -498,8 +495,9 @@ test('shows administrator storage totals, survives metric errors and hides analy
   const refreshed = page.waitForResponse((response) =>
     response.url().endsWith('/api/admin/storage'),
   );
-  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  await page.getByRole('button', { name: 'Storage overview' }).click();
   const current = await (await refreshed).json();
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
   expect(current.documents.count).toBe(initial.documents.count + 1);
   expect(current.documents.logical_bytes).toBe(
     initial.documents.logical_bytes + payload.length,

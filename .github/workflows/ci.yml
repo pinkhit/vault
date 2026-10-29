@@ -1,4 +1,4 @@
-name: FamilyVault checks
+name: SafeVault checks
 on: [push, pull_request]
 permissions:
   contents: read

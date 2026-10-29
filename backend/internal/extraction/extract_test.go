@@ -258,7 +258,7 @@ test "$(ulimit -v)" = 262144 || exit 125
 test "$(ulimit -t)" = 10 || exit 125
 test "$(ulimit -c)" = 0 || exit 125
 test "$(ulimit -f)" = 0 || exit 125
-test -z "${FAMILYVAULT_TEST_SECRET+x}" || exit 125
+test -z "${SAFEVAULT_TEST_SECRET+x}" || exit 125
 read -r header
 test "$header" = '%PDF-1.4' || exit 125
 printf 'limits verified\f'
@@ -267,7 +267,7 @@ printf 'limits verified\f'
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", directory)
-	t.Setenv("FAMILYVAULT_TEST_SECRET", "synthetic-value")
+	t.Setenv("SAFEVAULT_TEST_SECRET", "synthetic-value")
 	got, err := Extract(context.Background(), fixture.store, fixture.source)
 	if err != nil || !reflect.DeepEqual(got, []Passage{{Page: 1, Section: 1, Text: "limits verified"}}) {
 		t.Fatalf("child limits/environment/descriptor were not applied: %+v, %v", got, err)

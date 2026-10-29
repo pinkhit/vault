@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { login, type Session } from './api';
+import Brand from './Brand';
+import Icon from './Icon';
 
 export default function LoginForm({
   onLogin,
@@ -31,10 +33,32 @@ export default function LoginForm({
 
   return (
     <main className="auth-page">
-      <h1>FamilyVault</h1>
-      <p>Private documents. Individual accounts.</p>
+      <div className="auth-intro">
+        <Brand />
+        <div>
+          <p className="eyebrow">YOUR DOCUMENT WORKSPACE</p>
+          <h1>
+            Your documents,
+            <br />
+            all in one place.
+          </h1>
+          <p>Keep your files organised and find what you need.</p>
+          <ul className="auth-features">
+            <li>
+              <Icon name="upload" /> Upload your documents
+            </li>
+            <li>
+              <Icon name="search" /> Search filenames and contents
+            </li>
+            <li>
+              <Icon name="documents" /> Preview and download files
+            </li>
+          </ul>
+        </div>
+      </div>
       <section className="auth-card" aria-labelledby="signin-title">
         <h2 id="signin-title">Sign in</h2>
+        <p>Use your SafeVault account to continue.</p>
         <form onSubmit={(event) => void submit(event)}>
           <label htmlFor="username">Username</label>
           <input
@@ -66,15 +90,8 @@ export default function LoginForm({
             {error}
           </p>
         )}
-        <p className="muted">
-          Ask your administrator for an account. Initial setup uses the offline
-          create-admin command in the README.
-        </p>
+        <p className="muted">Need an account? Contact your administrator.</p>
       </section>
-      <p className="warning">
-        <strong>Synthetic documents only.</strong> Development demonstration;
-        production backups and deployment are not ready.
-      </p>
     </main>
   );
 }

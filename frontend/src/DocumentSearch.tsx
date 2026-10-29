@@ -15,6 +15,7 @@ import {
 } from './api';
 import { formatBytes } from './format';
 import IndexingBadge from './IndexingBadge';
+import Icon from './Icon';
 
 type Query = { text: string; offset: number };
 type SearchResponse = {
@@ -108,25 +109,23 @@ export default function DocumentSearch({
   return (
     <>
       <section className="search-card" aria-labelledby="search-title">
-        <h2 id="search-title">Search documents</h2>
-        <p id="search-help">
-          Search filenames, file details and indexed text. Use full identifiers
-          or "quoted phrases".
-        </p>
+        <h2 id="search-title" className="sr-only">
+          Search documents
+        </h2>
         <form role="search" onSubmit={submit}>
           <label className="sr-only" htmlFor="document-search">
             Search documents
           </label>
           <div className="search-controls">
+            <Icon name="search" />
             <input
               ref={input}
               id="document-search"
               type="search"
               value={draft}
               maxLength={512}
-              aria-describedby="search-help"
               autoComplete="off"
-              placeholder="Invoice number, filename or words…"
+              placeholder="Search your documents"
               onChange={(event) => setDraft(event.target.value)}
             />
             <button className="primary" type="submit" disabled={!draft.trim()}>
@@ -217,14 +216,16 @@ export default function DocumentSearch({
                     {formatBytes(hit.document.size)}
                   </p>
                   <p className="search-snippet">{hit.snippet}</p>
-                  <button
-                    className="secondary preview-button"
-                    aria-label={`Preview ${hit.document.name}`}
-                    onClick={() => onPreview(hit.document, hit.page)}
-                  >
-                    Preview{hit.page ? ` page ${hit.page}` : ''}
-                  </button>
-                  {renderDelete?.(hit.document)}
+                  <div className="document-actions">
+                    <button
+                      className="secondary"
+                      aria-label={`Preview ${hit.document.name}`}
+                      onClick={() => onPreview(hit.document, hit.page)}
+                    >
+                      Preview{hit.page ? ` page ${hit.page}` : ''}
+                    </button>
+                    {renderDelete?.(hit.document)}
+                  </div>
                 </li>
               ))}
             </ul>

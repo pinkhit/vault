@@ -18,6 +18,8 @@ import DocumentPreview from './DocumentPreview';
 import StorageOverview from './StorageOverview';
 import { formatBytes } from './format';
 import LoginForm from './LoginForm';
+import Brand from './Brand';
+import Icon from './Icon';
 
 const errorMessage = (error: unknown) =>
   error instanceof Error
@@ -101,10 +103,12 @@ function DocumentBrowser({
   const [listError, setListError] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(0);
   const [uploadError, setUploadError] = useState('');
   const [notice, setNotice] = useState('');
   const [signingOut, setSigningOut] = useState(false);
   const [showStorage, setShowStorage] = useState(false);
+  const [libraryRevision, setLibraryRevision] = useState(0);
   const [preview, setPreview] = useState<{
     document: DocumentRecord;
     page: number;
@@ -178,9 +182,10 @@ function DocumentBrowser({
       return;
     }
     setUploading(true);
+    setUploadProgress(0);
     try {
-      const result = await uploadDocument(file);
-      setNotice(`${result.name} uploaded. SHA-256 verified.`);
+      const result = await uploadDocument(file, setUploadProgress);
+      setNotice(`${result.name} uploaded.`);
       setFile(null);
       if (fileInput.current) {
         fileInput.current.value = '';
@@ -227,164 +232,177 @@ function DocumentBrowser({
   }
 
   return (
-    <>
-      <header className="topbar">
-        <a className="brand" href="/" aria-label="FamilyVault home">
-          <span className="brand-mark" aria-hidden="true">
-            F
-          </span>
-          FamilyVault
-        </a>
-        <div className="header-actions">
-          <span>{session.user.username}</span>
+    <div className="vault-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to content
+      </a>
+      <aside className="sidebar">
+        <Brand />
+        <p className="sidebar-label">WORKSPACE</p>
+        <nav aria-label="Main navigation">
+          <button
+            className={!showStorage ? 'nav-item active' : 'nav-item'}
+            aria-current={!showStorage ? 'page' : undefined}
+            onClick={() => {
+              setShowStorage(false);
+              setOffset(0);
+              setLibraryRevision((value) => value + 1);
+              refresh();
+            }}
+          >
+            <Icon name="documents" /> Documents
+          </button>
           {session.user.is_admin && (
             <button
-              className="secondary"
+              className={showStorage ? 'nav-item active' : 'nav-item'}
+              aria-label="Storage overview"
               aria-expanded={showStorage}
               aria-controls="storage-overview"
               onClick={() => setShowStorage((value) => !value)}
             >
-              Storage overview
+              <Icon name="storage" /> Storage
             </button>
           )}
-          <button
-            className="secondary"
-            disabled={uploading || signingOut}
-            onClick={() => void signOut()}
-          >
-            Sign out
-          </button>
-          <button
-            className="secondary"
-            disabled={uploading || signingOut}
-            onClick={() => void signOut(true)}
-          >
-            Sign out all devices
-          </button>
-          <span className="local-badge">
-            <span aria-hidden="true" />
-            {health?.mode === 'private-https'
-              ? 'Private HTTPS'
-              : 'Local development'}
-          </span>
-        </div>
-      </header>
-      <div className="warning">
-        <strong>Synthetic documents only.</strong>{' '}
-        {health?.mode === 'private-https'
-          ? 'Private demonstration access.'
-          : 'Keep this development app on localhost.'}{' '}
-        Production backups and deployment are not ready.
-      </div>
-      <main>
-        <div className="page-heading">
+        </nav>
+      </aside>
+      <div className="workspace">
+        <header className="workspace-header">
           <div>
-            <p className="eyebrow">YOUR LOCAL REPOSITORY</p>
-            <h1>Documents</h1>
-            <p>Keep files together. Retrieve the original, every time.</p>
+            <p className="eyebrow">YOUR WORKSPACE</p>
+            <h1>{showStorage ? 'Storage' : 'Documents'}</h1>
           </div>
-          <span className="connection">
-            {healthError
-              ? 'API unavailable'
-              : health
-                ? 'API connected'
-                : 'Connecting…'}
-          </span>
-        </div>
-        {healthError && (
-          <p className="error" role="alert">
-            {healthError}{' '}
-            <button className="text-button" onClick={refresh}>
-              Retry connection
-            </button>
-          </p>
-        )}
-        {session.user.is_admin && showStorage && (
-          <StorageOverview onUnauthorized={onSignOut} />
-        )}
-        <section className="upload-card" aria-labelledby="upload-title">
-          <div>
-            <h2 id="upload-title">Add a document</h2>
-            <p>
-              Original bytes stored locally. SHA-256 checked on upload and
-              download.
-            </p>
-            <p className="muted">
-              One file at a time
-              {health
-                ? ` · Up to ${formatBytes(health.max_upload_bytes)}`
-                : ''}{' '}
-              · No empty files
-            </p>
-          </div>
-          <form onSubmit={(event) => void onUpload(event)}>
-            <label htmlFor="document-file">Choose a fictional document</label>
-            <div className="upload-actions">
-              <input
-                ref={fileInput}
-                id="document-file"
-                type="file"
-                disabled={uploading}
-                onChange={(event) => {
-                  setFile(event.target.files?.[0] ?? null);
-                  setUploadError('');
-                  setNotice('');
-                }}
-              />
+          <details className="account-menu">
+            <summary aria-label="Account options">
+              <span className="avatar" aria-hidden="true">
+                {session.user.username.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="account-name">{session.user.username}</span>
+              <Icon name="chevron" />
+            </summary>
+            <div className="account-options">
+              <p>{session.user.is_admin ? 'Administrator' : 'Your account'}</p>
               <button
-                className="primary"
-                type="submit"
-                disabled={!file || !health || uploading || !!healthError}
+                disabled={uploading || signingOut}
+                onClick={() => void signOut()}
               >
-                {uploading ? 'Verifying & uploading…' : 'Upload document'}
+                Sign out
+              </button>
+              <button
+                disabled={uploading || signingOut}
+                onClick={() => void signOut(true)}
+              >
+                Sign out all devices
               </button>
             </div>
-          </form>
-        </section>
-        <div role="status">
-          {notice && <p className="success">{notice}</p>}
-          {uploading && (
-            <p className="muted">
-              Calculating checksum and transferring your document…
+          </details>
+        </header>
+        <main id="main-content" className="workspace-main">
+          <div role="status">
+            {notice && <p className="success">{notice}</p>}
+            {uploading && (
+              <div className="upload-progress">
+                <progress
+                  aria-label="Upload progress"
+                  max={100}
+                  value={uploadProgress ?? undefined}
+                />
+                <span>
+                  {uploadProgress === null
+                    ? 'Uploading…'
+                    : uploadProgress === 100
+                      ? 'Finishing upload…'
+                      : `Uploading ${uploadProgress}%`}
+                </span>
+              </div>
+            )}
+          </div>
+          {uploadError && (
+            <p className="error" role="alert">
+              {uploadError}
             </p>
           )}
-        </div>
-        {uploadError && (
-          <p className="error" role="alert">
-            {uploadError}
-          </p>
-        )}
-        <DocumentSearch
-          revision={revision}
-          onUnauthorized={onSignOut}
-          onClear={refresh}
-          onPreview={(document, page = 1) => setPreview({ document, page })}
-          renderDelete={renderDelete}
-        >
-          <DocumentLibrary
-            page={page}
-            offset={offset}
-            loading={loading}
-            error={listError}
-            onRefresh={refresh}
-            onPageChange={setOffset}
-            onPreview={(document) => setPreview({ document, page: 1 })}
-            renderDelete={renderDelete}
-          />
-        </DocumentSearch>
-        {preview && (
-          <DocumentPreview
-            key={`${preview.document.id}:${preview.page}`}
-            document={preview.document}
-            initialPage={preview.page}
-            onClose={() => setPreview(null)}
-            onUnauthorized={onSignOut}
-          />
-        )}
-        <footer>
-          FamilyVault <span>Authenticated local vault · Document search</span>
-        </footer>
-      </main>
-    </>
+          {showStorage && session.user.is_admin ? (
+            <StorageOverview onUnauthorized={onSignOut} />
+          ) : (
+            <DocumentSearch
+              key={libraryRevision}
+              revision={revision}
+              onUnauthorized={onSignOut}
+              onClear={refresh}
+              onPreview={(document, page = 1) => setPreview({ document, page })}
+              renderDelete={renderDelete}
+            >
+              {healthError && (
+                <p className="error" role="alert">
+                  {healthError}{' '}
+                  <button className="text-button" onClick={refresh}>
+                    Retry connection
+                  </button>
+                </p>
+              )}
+              <section className="upload-card" aria-labelledby="upload-title">
+                <div>
+                  <h2 id="upload-title">Add a document</h2>
+                  <p>
+                    {health
+                      ? `Up to ${formatBytes(health.max_upload_bytes)} per file`
+                      : 'Checking upload availability…'}
+                  </p>
+                </div>
+                <form onSubmit={(event) => void onUpload(event)}>
+                  <label className="sr-only" htmlFor="document-file">
+                    Choose a document
+                  </label>
+                  <div className="upload-actions">
+                    <input
+                      ref={fileInput}
+                      id="document-file"
+                      type="file"
+                      disabled={uploading}
+                      onChange={(event) => {
+                        setFile(event.target.files?.[0] ?? null);
+                        setUploadError('');
+                        setNotice('');
+                      }}
+                    />
+                    <button
+                      className="primary"
+                      type="submit"
+                      disabled={!file || !health || uploading || !!healthError}
+                    >
+                      <Icon name="upload" />{' '}
+                      {uploading ? 'Uploading…' : 'Upload document'}
+                    </button>
+                  </div>
+                </form>
+              </section>
+              <DocumentLibrary
+                page={page}
+                offset={offset}
+                loading={loading}
+                error={listError}
+                onRefresh={refresh}
+                onPageChange={setOffset}
+                onPreview={(document) => setPreview({ document, page: 1 })}
+                renderDelete={renderDelete}
+              />
+            </DocumentSearch>
+          )}
+          {preview && (
+            <DocumentPreview
+              key={`${preview.document.id}:${preview.page}`}
+              document={preview.document}
+              initialPage={preview.page}
+              onClose={() => setPreview(null)}
+              onUnauthorized={onSignOut}
+            />
+          )}
+          <footer>
+            <span>SafeVault</span>
+            <span>Your document workspace</span>
+          </footer>
+        </main>
+      </div>
+    </div>
   );
 }
