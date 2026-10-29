@@ -14,7 +14,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/serve
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/create-admin ./cmd/create-admin
 
 FROM alpine:3.23
-RUN addgroup -g 10001 vault && adduser -D -u 10001 -G vault vault \
+RUN apk add --no-cache poppler-utils \
+    && addgroup -g 10001 vault && adduser -D -u 10001 -G vault vault \
     && mkdir /data && chown vault:vault /data && chmod 700 /data
 WORKDIR /app
 COPY --from=backend /out/server ./server

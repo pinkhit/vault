@@ -1,10 +1,10 @@
-# Document indexing — Checkpoint 1
+# Document indexing
 
-Implemented: migration 004 and the internal `indexing` lifecycle helpers. Extraction, worker startup, upload enqueueing, status APIs, FTS5, previews and analytics are not implemented yet. No new routes or dependencies were added; development remains localhost-only.
+Implemented: migration 004, the internal `indexing` lifecycle helpers and a standalone [bounded TXT/PDF extractor](extraction.md). Worker startup, upload enqueueing, status APIs, FTS5, previews and analytics are not implemented yet. Development remains localhost-only.
 
 ## State and transactions
 
-One `document_index_jobs` row per document holds the current indexing status and queue metadata. This avoids a separate status copy drifting from the queue. The document foreign key cascades deletion. Migration 004 queues existing records as `pending` without changing originals, ownership, grants, sessions or audit history. Files are never opened by this subsystem.
+One `document_index_jobs` row per document holds the current indexing status and queue metadata. This avoids a separate status copy drifting from the queue. The document foreign key cascades deletion. Migration 004 queues existing records as `pending` without changing originals, ownership, grants, sessions or audit history. Job lifecycle helpers never open files; extraction uses the verified storage layer separately.
 
 ```text
 pending -> processing -> ready | failed | unsupported
@@ -22,11 +22,11 @@ pending -> processing -> ready | failed | unsupported
 
 ## Limits and interview concepts
 
-There is no worker, extraction, extracted-text schema, public status endpoint or manual retry API yet. New uploads are not automatically enqueued in this checkpoint. The queue stores current state, not an attempt history. Persist only sanitized operational errors (maximum 512 UTF-8 bytes through the helper), never filenames, paths, document text or credentials. No performance benchmark is claimed.
+There is no worker, extracted-text schema, public status endpoint or manual retry API yet. New uploads are not automatically enqueued. The queue stores current state, not an attempt history. Persist only sanitized operational errors (maximum 512 UTF-8 bytes through the helper), never filenames, paths, document text or credentials. No performance benchmark is claimed.
 
 The important concepts are additive transactional migrations, atomic queue claims, idempotency, attempt tokens that reject stale writes, and durable state versus process memory. Recovery permits work to run again after interruption; it does not promise exactly-once extraction. Source bytes remain independent of derived indexing state. Search authorization must still be enforced against current Milestone 2 permissions when the search API is implemented.
 
-## Checkpoint verification
+## Checkpoint 1 verification
 
 - Go 1.26.10 in Docker: formatting, `go vet ./...` and the complete race suite passed; combined statement coverage was 75.8%. New tests cover migration preservation, constraints, retry deadlines, restart recovery, stale/replaced/deleted sources, concurrent claims and transaction rollback.
 - Frontend formatting, all 10 unit tests, TypeScript checks and production build passed. The existing desktop/mobile browser test passed using freshly cross-built native binaries and isolated synthetic data.

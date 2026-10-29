@@ -1,6 +1,6 @@
-# FamilyVault architecture — Milestone 2
+# FamilyVault architecture
 
-Implemented: one Go process, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions and audit events. Extraction, AI and remote access remain planned only.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events and standalone bounded TXT/PDF extraction helpers. Background indexing, search, AI and remote access remain planned.
 
 ```mermaid
 flowchart LR
@@ -24,6 +24,7 @@ During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `
 - `internal/authorization`: explicit document read/write/manage checks; no folder inheritance yet.
 - `internal/audit`: structured security/document events sharing mutation transactions.
 - `internal/documents`: filenames, metadata queries, checksum comparison, upload coordination.
+- `internal/extraction`: bounded TXT passages and Linux Poppler subprocesses; not connected to uploads or a worker yet. See [extraction limits](extraction.md).
 - `internal/storage`: confined file operations, staging, syncing, verification and startup cleanup.
 - `internal/database`: SQLite settings and embedded, ordered, transactional migrations.
 - `internal/config`: environment validation and safe bind defaults.
