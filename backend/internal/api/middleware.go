@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"github.com/pinkhit/vault/backend/internal/audit"
 	"net"
 	"net/http"
 	"time"
@@ -19,6 +20,7 @@ func (a *API) middleware(next http.Handler) http.Handler {
 			return
 		}
 		requestID := hex.EncodeToString(token[:])
+		r = r.WithContext(audit.WithRequestID(r.Context(), requestID))
 		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")

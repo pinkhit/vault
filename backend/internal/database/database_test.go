@@ -18,7 +18,7 @@ func TestMigrationReopenAndPragmas(t *testing.T) {
 		if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil {
 			t.Fatal(err)
 		}
-		if versions != 1 {
+		if versions != 2 {
 			t.Fatalf("migrations: %d", versions)
 		}
 		if err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {

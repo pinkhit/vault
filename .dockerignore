@@ -25,6 +25,7 @@
 **/*.key
 backend/bin
 backend/server
+backend/create-admin
 data
 backend/data
 storage

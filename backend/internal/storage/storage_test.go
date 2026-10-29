@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -17,6 +18,25 @@ func (r *brokenReader) Read(p []byte) (int, error) {
 	}
 	r.sent = true
 	return copy(p, "partial bytes"), nil
+}
+
+func TestDownloadRejectsFIFOWithoutBlocking(t *testing.T) {
+	dir := t.TempDir()
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	id := strings.Repeat("a", 32)
+	if err = syscall.Mkfifo(filepath.Join(dir, "objects", id), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if file, err := store.OpenVerified(id, 1, strings.Repeat("b", 64)); !errors.Is(err, ErrIntegrity) {
+		if file != nil {
+			file.Close()
+		}
+		t.Fatalf("FIFO accepted: %v", err)
+	}
 }
 
 func TestInterruptedWriteCleansStaging(t *testing.T) {

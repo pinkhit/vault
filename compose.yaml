@@ -1,12 +1,16 @@
 name: familyvault
 services:
   app:
+    image: familyvault-app:local
     build:
       context: .
     ports:
       - "127.0.0.1:${FAMILYVAULT_PORT:-8080}:8080"
     environment:
       FAMILYVAULT_MAX_UPLOAD_BYTES: "${FAMILYVAULT_MAX_UPLOAD_BYTES:-26214400}"
+      FAMILYVAULT_SESSION_TTL: "${FAMILYVAULT_SESSION_TTL:-8h}"
+      FAMILYVAULT_SESSION_IDLE_TTL: "${FAMILYVAULT_SESSION_IDLE_TTL:-30m}"
+      FAMILYVAULT_COOKIE_SECURE: "${FAMILYVAULT_COOKIE_SECURE:-false}"
     volumes:
       - vault-data:/data
     read_only: true

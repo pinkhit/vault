@@ -28,3 +28,20 @@ func TestLoad(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthenticationSettings(t *testing.T) {
+	for _, test := range []struct{ key, value string }{
+		{"FAMILYVAULT_SESSION_TTL", "0s"},
+		{"FAMILYVAULT_SESSION_TTL", "48h"},
+		{"FAMILYVAULT_SESSION_IDLE_TTL", "0s"},
+		{"FAMILYVAULT_SESSION_IDLE_TTL", "9h"},
+		{"FAMILYVAULT_COOKIE_SECURE", "invalid"},
+	} {
+		t.Run(test.key+test.value, func(t *testing.T) {
+			t.Setenv(test.key, test.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("invalid authentication setting accepted")
+			}
+		})
+	}
+}

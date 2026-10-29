@@ -1,14 +1,40 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
-import { getHealth, listDocuments, uploadDocument } from './api';
+import {
+  getHealth,
+  getSession,
+  login,
+  logout,
+  listDocuments,
+  uploadDocument,
+  APIError,
+} from './api';
 
-vi.mock('./api', () => ({
-  getHealth: vi.fn(),
-  listDocuments: vi.fn(),
-  uploadDocument: vi.fn(),
-}));
+vi.mock('./api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./api')>();
+  return {
+    ...actual,
+    getHealth: vi.fn(),
+    getSession: vi.fn(),
+    login: vi.fn(),
+    logout: vi.fn(),
+    listDocuments: vi.fn(),
+    uploadDocument: vi.fn(),
+  };
+});
+const session = {
+  user: {
+    id: 'c'.repeat(32),
+    username: 'alice',
+    is_admin: false,
+    enabled: true,
+  },
+  csrf_token: 'e'.repeat(64),
+  expires_at: '2026-10-29T00:00:00Z',
+};
 const document = {
+  owner_id: 'c'.repeat(32),
   id: 'a'.repeat(32),
   name: 'Fictional invoice.txt',
   size: 21,
@@ -19,6 +45,7 @@ const document = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(getSession).mockResolvedValue(session);
   vi.mocked(getHealth).mockResolvedValue({
     status: 'ok',
     mode: 'local-development',
@@ -110,5 +137,80 @@ describe('document browser', () => {
     expect(
       screen.getByRole('button', { name: 'Upload document' }),
     ).toBeEnabled();
+  });
+});
+
+describe('authentication', () => {
+  it('does not fetch documents until authenticated', async () => {
+    vi.mocked(getSession).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in' }),
+    ).toBeVisible();
+    expect(listDocuments).not.toHaveBeenCalled();
+  });
+
+  it('signs in and loads the authenticated library', async () => {
+    vi.mocked(getSession).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    vi.mocked(login).mockResolvedValue(session);
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Sign in' });
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'alice' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'fictional-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText('Your library starts here')).toBeVisible();
+    expect(login).toHaveBeenCalledWith('alice', 'fictional-password');
+  });
+
+  it('shows generic login errors and clears the password', async () => {
+    vi.mocked(getSession).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    vi.mocked(login).mockRejectedValue(
+      new APIError('invalid username or password', 401),
+    );
+    render(<App />);
+    await screen.findByRole('heading', { name: 'Sign in' });
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'alice' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'wrong' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'invalid username or password',
+    );
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+  });
+
+  it('clears the library after sign-out', async () => {
+    vi.mocked(logout).mockResolvedValue();
+    render(<App />);
+    await screen.findByText('Your library starts here');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in' }),
+    ).toBeVisible();
+    expect(logout).toHaveBeenCalledWith(false);
+    expect(screen.queryByText('Document library')).not.toBeInTheDocument();
+  });
+
+  it('returns to sign-in when the session expires', async () => {
+    vi.mocked(listDocuments).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    render(<App />);
+    expect(
+      await screen.findByRole('heading', { name: 'Sign in' }),
+    ).toBeVisible();
   });
 });

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   getHealth,
+  getSession,
+  logout,
+  APIError,
+  type Session,
   listDocuments,
   uploadDocument,
   type DocumentPage,
@@ -8,6 +12,7 @@ import {
 } from './api';
 import DocumentLibrary from './DocumentLibrary';
 import { formatBytes } from './format';
+import LoginForm from './LoginForm';
 
 const errorMessage = (error: unknown) =>
   error instanceof Error
@@ -15,6 +20,70 @@ const errorMessage = (error: unknown) =>
     : 'Something went wrong. Please try again.';
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [checking, setChecking] = useState(true);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setChecking(true);
+    setError('');
+    getSession(controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setSession(result);
+      })
+      .catch((error: unknown) => {
+        if (
+          !controller.signal.aborted &&
+          !(error instanceof APIError && error.status === 401)
+        ) {
+          setError(errorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setChecking(false);
+      });
+    return () => controller.abort();
+  }, [retry]);
+
+  if (checking)
+    return (
+      <main>
+        <p role="status">Checking your session…</p>
+      </main>
+    );
+  if (error)
+    return (
+      <main>
+        <p className="error" role="alert">
+          {error}
+        </p>
+        <button
+          className="secondary"
+          onClick={() => setRetry((value) => value + 1)}
+        >
+          Retry connection
+        </button>
+      </main>
+    );
+  if (!session) return <LoginForm onLogin={setSession} />;
+  return (
+    <DocumentBrowser
+      key={session.user.id}
+      session={session}
+      onSignOut={() => setSession(null)}
+    />
+  );
+}
+
+function DocumentBrowser({
+  session,
+  onSignOut,
+}: {
+  session: Session;
+  onSignOut: () => void;
+}) {
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState('');
   const [page, setPage] = useState<DocumentPage>({
@@ -29,6 +98,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [notice, setNotice] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,7 +130,11 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setListError(errorMessage(error));
+          if (error instanceof APIError && error.status === 401) {
+            onSignOut();
+          } else {
+            setListError(errorMessage(error));
+          }
         }
       })
       .finally(() => {
@@ -103,9 +177,23 @@ export default function App() {
       setOffset(0);
       refresh();
     } catch (error: unknown) {
-      setUploadError(errorMessage(error));
+      if (error instanceof APIError && error.status === 401) onSignOut();
+      else setUploadError(errorMessage(error));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function signOut(allDevices = false) {
+    setSigningOut(true);
+    try {
+      await logout(allDevices);
+      onSignOut();
+    } catch (error: unknown) {
+      if (error instanceof APIError && error.status === 401) onSignOut();
+      else setUploadError(errorMessage(error));
+    } finally {
+      setSigningOut(false);
     }
   }
 
@@ -118,14 +206,31 @@ export default function App() {
           </span>
           FamilyVault
         </a>
-        <span className="local-badge">
-          <span aria-hidden="true" />
-          Local development
-        </span>
+        <div className="header-actions">
+          <span>{session.user.username}</span>
+          <button
+            className="secondary"
+            disabled={uploading || signingOut}
+            onClick={() => void signOut()}
+          >
+            Sign out
+          </button>
+          <button
+            className="secondary"
+            disabled={uploading || signingOut}
+            onClick={() => void signOut(true)}
+          >
+            Sign out all devices
+          </button>
+          <span className="local-badge">
+            <span aria-hidden="true" />
+            Local development
+          </span>
+        </div>
       </header>
       <div className="warning">
-        <strong>Synthetic documents only.</strong> This prototype has no
-        accounts or access controls. Keep it on localhost.
+        <strong>Synthetic documents only.</strong> Keep this development app on
+        localhost. Production backups and deployment are not ready.
       </div>
       <main>
         <div className="page-heading">
@@ -211,7 +316,7 @@ export default function App() {
           onPageChange={setOffset}
         />
         <footer>
-          FamilyVault <span>Milestone 1 · Local file server</span>
+          FamilyVault <span>Milestone 2 · Authenticated local vault</span>
         </footer>
       </main>
     </>

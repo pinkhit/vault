@@ -71,9 +71,11 @@ p {
   color: #60716a;
 }
 .topbar {
-  height: 88px;
+  min-height: 88px;
   padding: 0 max(28px, calc((100vw - 1120px) / 2));
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
   background: #fff;
@@ -404,8 +406,8 @@ footer {
 }
 @media (max-width: 760px) {
   .topbar {
-    height: 72px;
-    padding: 0 20px;
+    min-height: 72px;
+    padding: 16px 20px;
   }
   .brand {
     font-size: 1.15rem;
@@ -467,4 +469,45 @@ footer {
     gap: 15px;
     font-size: 0.65rem;
   }
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.header-actions > span:first-child {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.auth-page {
+  max-width: 540px;
+}
+
+.auth-card {
+  padding: 28px;
+  margin: 24px 0;
+  border: 1px solid #dfe5dc;
+  border-radius: 12px;
+  background: white;
+}
+
+.auth-card form {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.auth-card input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #b7c5b7;
+  border-radius: 6px;
 }
