@@ -11,6 +11,7 @@ import {
   type Health,
 } from './api';
 import DocumentLibrary from './DocumentLibrary';
+import DocumentSearch from './DocumentSearch';
 import { formatBytes } from './format';
 import LoginForm from './LoginForm';
 
@@ -146,6 +147,7 @@ function DocumentBrowser({
   }, [offset, revision]);
 
   function refresh() {
+    setLoading(true);
     setRevision((value) => value + 1);
   }
 
@@ -307,16 +309,22 @@ function DocumentBrowser({
             {uploadError}
           </p>
         )}
-        <DocumentLibrary
-          page={page}
-          offset={offset}
-          loading={loading}
-          error={listError}
-          onRefresh={refresh}
-          onPageChange={setOffset}
-        />
+        <DocumentSearch
+          revision={revision}
+          onUnauthorized={onSignOut}
+          onClear={refresh}
+        >
+          <DocumentLibrary
+            page={page}
+            offset={offset}
+            loading={loading}
+            error={listError}
+            onRefresh={refresh}
+            onPageChange={setOffset}
+          />
+        </DocumentSearch>
         <footer>
-          FamilyVault <span>Milestone 2 · Authenticated local vault</span>
+          FamilyVault <span>Authenticated local vault · Document search</span>
         </footer>
       </main>
     </>

@@ -1,4 +1,4 @@
-# Milestone 2 threat model
+# FamilyVault threat model
 
 **Authenticated localhost development. Synthetic documents only.** Protected APIs require a live server-side session and document authorization. Localhost remains an exposure boundary, not a replacement for those checks. Never use Tailscale Serve/Funnel, router forwarding or a public proxy at this stage.
 
@@ -35,3 +35,5 @@ Generic login responses, dummy hashing and constant-time derived-key comparison 
 Malware scanning, encryption at rest, deletion, AI, remote access, production backups/restoration, MFA and complete operational monitoring are not implemented. Production use still requires later milestones and restore testing. See [authentication details](authentication.md) for exact session, CSRF, permission and initial-account behavior.
 
 Background indexing applies the [extraction limits](extraction.md) and commits passages/status only after checking the current checksum and attempt token. Upload/job/audit creation is atomic; failures do not delete originals. The status endpoint filters current read authority in SQL and never returns passages or tokens. [Search](search.md) filters both metadata and ready/current passages before deduplication/pagination, uses bound literal queries and row-local ranking, and exposes no global totals. FTS is private storage, not an authorization boundary. Poppler shares the application UID: subprocess resource limits contain ordinary crashes/exhaustion, not a complete filesystem/network compromise. No indexing quotas or production performance guarantees are implemented.
+
+The search interface renders filenames/snippets as text and uses only authenticated document-ID download links. It aborts replaced requests, associates results with a submission/refresh and clears authenticated views on sign-out or 401, preventing late responses from restoring an older view. New requests enforce current permissions on the server; already-delivered content cannot be retracted. File previews and their separate browser-content boundary remain unimplemented.

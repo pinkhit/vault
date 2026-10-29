@@ -1,6 +1,6 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF indexing and a permission-aware FTS5 search API. Search UI, previews, analytics, AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with document search and indexing indicators, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF indexing and a permission-aware FTS5 search API. Previews, analytics, AI and remote access remain planned.
 
 ```mermaid
 flowchart LR

@@ -31,13 +31,14 @@ var (
 )
 
 type Document struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Size      int64     `json:"size"`
-	MediaType string    `json:"media_type"`
-	SHA256    string    `json:"sha256"`
-	CreatedAt time.Time `json:"created_at"`
-	OwnerID   string    `json:"owner_id"`
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Size           int64           `json:"size"`
+	MediaType      string          `json:"media_type"`
+	SHA256         string          `json:"sha256"`
+	CreatedAt      time.Time       `json:"created_at"`
+	OwnerID        string          `json:"owner_id"`
+	IndexingStatus indexing.Status `json:"indexing_status,omitempty"`
 }
 
 type Service struct {
@@ -99,13 +100,14 @@ func (s *Service) Upload(ctx context.Context, actor auth.User, name string, read
 		return Document{}, err
 	}
 	document := Document{
-		ID:        id,
-		Name:      name,
-		Size:      staged.Size,
-		MediaType: mediaType,
-		SHA256:    staged.SHA256,
-		CreatedAt: time.Now().UTC(),
-		OwnerID:   actor.ID,
+		ID:             id,
+		Name:           name,
+		Size:           staged.Size,
+		MediaType:      mediaType,
+		SHA256:         staged.SHA256,
+		CreatedAt:      time.Now().UTC(),
+		OwnerID:        actor.ID,
+		IndexingStatus: indexing.Pending,
 	}
 	// Once promotion succeeds, never delete the object on an ambiguous database error.
 	// A crash or failed insert leaves an invisible orphan for startup reconciliation.
@@ -152,7 +154,7 @@ func scan(scanner interface{ Scan(...any) error }) (Document, error) {
 	var d Document
 	var timestamp string
 	var owner sql.NullString
-	err := scanner.Scan(&d.ID, &d.Name, &d.Size, &d.MediaType, &d.SHA256, &timestamp, &owner)
+	err := scanner.Scan(&d.ID, &d.Name, &d.Size, &d.MediaType, &d.SHA256, &timestamp, &owner, &d.IndexingStatus)
 	if err != nil {
 		return d, err
 	}
@@ -163,8 +165,9 @@ func scan(scanner interface{ Scan(...any) error }) (Document, error) {
 
 func (s *Service) List(ctx context.Context, actor auth.User, limit, offset int) ([]Document, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT d.id, d.name, d.size, d.media_type, d.sha256, d.created_at, d.owner_id
+		SELECT d.id, d.name, d.size, d.media_type, d.sha256, d.created_at, d.owner_id, COALESCE(j.status,'')
 		FROM documents d JOIN users u ON u.id = ?
+		LEFT JOIN document_index_jobs j ON j.document_id = d.id AND j.source_sha256 = d.sha256
 		WHERE `+authorization.Visible+`
 		ORDER BY d.created_at DESC, d.id DESC
 		LIMIT ? OFFSET ?`, actor.ID, limit, offset)
@@ -185,8 +188,9 @@ func (s *Service) List(ctx context.Context, actor auth.User, limit, offset int) 
 
 func (s *Service) Get(ctx context.Context, actor auth.User, id string) (Document, error) {
 	return scan(s.DB.QueryRowContext(ctx, `
-		SELECT d.id, d.name, d.size, d.media_type, d.sha256, d.created_at, d.owner_id
+		SELECT d.id, d.name, d.size, d.media_type, d.sha256, d.created_at, d.owner_id, COALESCE(j.status,'')
 		FROM documents d JOIN users u ON u.id = ?
+		LEFT JOIN document_index_jobs j ON j.document_id = d.id AND j.source_sha256 = d.sha256
 		WHERE d.id = ? AND `+authorization.Visible, actor.ID, id))
 }
 
@@ -228,7 +232,7 @@ func (s *Service) Rename(ctx context.Context, actor auth.User, id, name string) 
 
 func (s *Service) Recover(ctx context.Context) error {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT id, name, size, media_type, sha256, created_at, owner_id
+		SELECT id, name, size, media_type, sha256, created_at, owner_id, ''
 		FROM documents`)
 	if err != nil {
 		return err

@@ -99,3 +99,39 @@ func TestUploadJobAndAuditAreOneTransaction(t *testing.T) {
 		})
 	}
 }
+
+func TestDocumentAndSearchStatusProjectionUsesCurrentSource(t *testing.T) {
+	a, _ := newApp(t, t.TempDir(), 1024)
+	document := uploadAs(t, a, fixtureIdentity(), "status-projection.txt")
+	if document.IndexingStatus != indexing.Pending {
+		t.Fatal("upload did not expose its queued state")
+	}
+	for _, status := range []indexing.Status{indexing.Processing, indexing.Ready, indexing.Unsupported} {
+		token := ""
+		if status == indexing.Processing {
+			token = strings.Repeat("a", 64)
+		}
+		if _, err := a.Documents.DB.Exec("UPDATE document_index_jobs SET status=?,attempts=1,attempt_token=? WHERE document_id=?", status, token, document.ID); err != nil {
+			t.Fatal(err)
+		}
+		listed, err := a.Documents.List(context.Background(), fixtureActor, 50, 0)
+		if err != nil || len(listed) != 1 || listed[0].IndexingStatus != status {
+			t.Fatal("listing omitted current indexing state", err)
+		}
+		results := searchPage(t, a, fixtureIdentity(), "status-projection", 20, 0)
+		if len(results.Results) != 1 || results.Results[0].Document.IndexingStatus != status {
+			t.Fatal("search omitted current indexing state")
+		}
+	}
+	if _, err := a.Documents.DB.Exec("UPDATE documents SET sha256=? WHERE id=?", strings.Repeat("0", 64), document.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Documents.Get(context.Background(), fixtureActor, document.ID)
+	if err != nil || got.IndexingStatus != "" {
+		t.Fatal("obsolete job state was attached to current metadata", err)
+	}
+	results := searchPage(t, a, fixtureIdentity(), "status-projection", 20, 0)
+	if len(results.Results) != 1 || results.Results[0].Document.IndexingStatus != "" {
+		t.Fatal("search attached obsolete indexing state to the current source")
+	}
+}

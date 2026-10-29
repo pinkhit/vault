@@ -26,9 +26,11 @@ At startup, `Recover` runs under the storage lock before the listener/worker: it
 
 `GET /api/documents/{id}/indexing` requires the current session and document read permission. Its SQL reuses the owner/admin/grant predicate and requires the current source checksum. Permission revocation applies immediately. It returns `status`, `attempts`, `created_at`, `updated_at`, optional `next_attempt_at` and a sanitized `last_error`; no passages, names, checksums or attempt tokens. Missing and unauthorized IDs both return 404 for authenticated users. No public passage endpoint is provided.
 
+List/get/search document metadata also projects optional `indexing_status` from the current-checksum job under the same read authorization. The browser uses that snapshot for badges and refreshes explicitly, rather than issuing a request for each row. Missing or obsolete-source job state is omitted; detailed retry/error information stays on the per-document endpoint.
+
 ## Limits and interview concepts
 
-There is no search/preview UI or manual retry API yet. Terminal failures do not automatically restart. The queue stores current state, not attempt history. PDF extraction retains the Linux/Docker requirement; DOCX/OCR remain deferred. No performance benchmark, power-loss guarantee or production readiness is claimed. Rebuild/restart with the existing volume to apply migration 005; do not repeat account bootstrap or reset data.
+The search UI is implemented; previews and a manual retry API remain pending. Terminal failures do not automatically restart. The queue stores current state, not attempt history. PDF extraction retains the Linux/Docker requirement; DOCX/OCR remain deferred. No performance benchmark, power-loss guarantee or production readiness is claimed. Preserve the existing volume when rebuilding/restarting; do not repeat account bootstrap or reset data.
 
 The important concepts are additive transactional migrations, atomic queue claims, idempotency, attempt tokens that reject stale writes, and durable state versus process memory. Recovery permits work to run again after interruption; it does not promise exactly-once extraction. Source bytes remain independent of derived indexing state. Search applies current Milestone 2 permissions and source/readiness checks in SQL; FTS passage triggers share the publication transaction.
 

@@ -1,6 +1,16 @@
-# Permission-aware search — Checkpoint 4
+# Document search
 
-`GET /api/search?q=printer&limit=20&offset=0` requires a live session. It searches filenames, metadata and published passages using SQLite FTS5. This checkpoint adds the backend API only; the search interface remains Checkpoint 5. No new Go dependency, external search service, AI or remote access was introduced.
+`GET /api/search?q=printer&limit=20&offset=0` requires a live session. It searches filenames, metadata and published passages using SQLite FTS5. Checkpoint 5A adds the search interface to the existing document browser. File previews remain a separate reviewable part of Checkpoint 5. No new dependency, external search service, AI or remote access was introduced.
+
+## Search interface — Checkpoint 5A
+
+Search runs on explicit submission, with 20 results per page. Enter submits; clear returns to the library, refreshes its data and restores focus to the search input. Loading, empty, invalid-query and retry states retain the submitted query label. Queries are encoded with `URLSearchParams`, sent with same-origin credentials and kept only in component memory. Changing a query resets pagination; the next-page control respects the API offset bound.
+
+Each response is associated with its submission object and refresh revision. Old responses are hidden immediately on a new search/refresh, pending requests are aborted, and late responses cannot restore older snippets. Authentication failures unmount the authenticated browser and clear its search state. Authorization still happens on the server; the UI never filters results by owner. New requests recheck current access; there is no push notification for permission changes or retroactive erasure of already-read data.
+
+Snippets and filenames use React text nodes. Source links use generated document IDs and the existing authenticated attachment endpoint; page/section references are shown when supplied. No HTML injection, inline file viewer, CSP relaxation or cookie changes were introduced. Results and the library show indexing indicators; refresh updates them without automatic polling. List/get/search metadata now includes optional `indexing_status` from the current-checksum job under the existing SQL authorization predicate, avoiding one status request per displayed document. An absent/current-source-mismatched job displays an unavailable state.
+
+The form uses an associated label, keyboard submission, focus restoration, live status/error messages and responsive wrapping. Desktop and 390-pixel mobile screenshots were inspected; formal screen-reader/accessibility certification and real mobile hardware testing were not performed. The existing layout, upload workflow and download behavior remain in use.
 
 ## Query and response contract
 
@@ -31,10 +41,17 @@ Rebuild/restart with the existing named volume to apply the migration; do not re
 
 For an interview, explain the difference between an inverted index and authorization, why pagination must follow permission filtering, how transactional triggers prevent index drift, why stable keys matter for external content, and why ranking based on hidden corpus statistics can leak information. The [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html) describes the tokenizer, literal syntax, snippets and external-content mechanisms used here.
 
-## Checks actually executed
+## Checkpoint 4 verification
 
 - Go 1.26.10/Linux formatting, `go vet ./...` and the complete race suite passed; combined statement coverage was **78.9%**. Tests cover metadata/content/identifier matching, page references, document deduplication, ranking, pagination, current grants/revocation, disabled accounts and forged cached roles. Adding higher-ranked restricted documents leaves another user's complete search payload unchanged.
 - Migration/backfill, rename/audit rollback, unfinished/current-source filtering, replacement/deletion, FTS integrity after `VACUUM`, malformed queries, injection attempts, cancellation and query-log redaction tests passed. The bounded literal-parser fuzz run passed with **58,513 executions** observed in its five-second requested duration.
 - All **10 frontend tests**, formatting, TypeScript/production build and **1 desktop/mobile browser regression test** passed. The browser test exercises existing file operations, not a new search UI. Linux amd64/arm64 server and macOS amd64 server/CLI builds passed; ARM64 hardware was not tested.
 - The isolated Compose test verified authenticated filename, invoice-identifier and extracted-content search after restart, original-byte checksums, persisted sessions and logout rejection. Only its own synthetic project/volume was removed; the regular developer accounts/data were untouched.
 - `git diff --check` and Python syntax checks passed. Existing CI includes the new Go tests/fuzz seeds and extended Compose test on pushes/PRs. No hosted CI run, production benchmark, downgrade/restore drill or statistical timing evaluation was performed.
+
+## Checkpoint 5A verification
+
+- Frontend formatting, **19 unit/integration tests**, strict TypeScript checks and production build passed. Tests cover shared-document rendering, encoded requests, literal malicious-looking text, stale/aborted responses, query changes/pagination, refresh, UTF-8 bounds, empty/error/retry states, indexing indicators and sign-out/session-expiry cleanup. An initial build exposed typing errors in new tests; they were corrected before the successful rerun.
+- Go formatting, `go vet ./...` and the complete race suite passed; combined statement coverage was **78.9%**. Additional current-source status projection tests passed, including omission of obsolete job state. Linux amd64/arm64 server and macOS amd64 server/CLI builds passed.
+- **Two browser flows passed** with installed Chrome and freshly built native binaries: existing file operations plus real indexed-text search, literal untrusted filenames/snippets, source-byte downloads, desktop/mobile layout, empty/error recovery and clearing results after server-side session revocation. PDF reference display is covered by UI fixtures; no inline PDF preview was added.
+- The isolated Docker persistence/search test passed with the rebuilt UI. It touched only its own synthetic project/volume. `git diff --check` passed; no hosted CI run was triggered. The existing CI workflow runs the new tests. File previews have not started.

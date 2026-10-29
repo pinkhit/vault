@@ -1,5 +1,6 @@
 import type { DocumentPage } from './api';
 import { formatBytes } from './format';
+import IndexingBadge from './IndexingBadge';
 
 interface DocumentLibraryProps {
   page: DocumentPage;
@@ -72,6 +73,7 @@ export default function DocumentLibrary({
               <tr key={document.id}>
                 <td>
                   <span className="document-name">{document.name}</span>
+                  <IndexingBadge status={document.indexing_status} />
                   <details>
                     <summary>SHA-256 checksum</summary>
                     <code>{document.sha256}</code>
@@ -113,7 +115,7 @@ export default function DocumentLibrary({
       <div className="section-heading">
         <div>
           <h2 id="library-title">Document library</h2>
-          <p>Newest uploads first</p>
+          <p>Newest uploads first · Refresh to update indexing status</p>
         </div>
         <button className="secondary" disabled={loading} onClick={onRefresh}>
           Refresh

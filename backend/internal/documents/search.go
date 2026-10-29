@@ -53,7 +53,7 @@ func (s *Service) Search(ctx context.Context, actor auth.User, query string, lim
 	defer cancel()
 	rows, err := s.DB.QueryContext(ctx, `
         WITH hits AS MATERIALIZED (
-            SELECT d.id,d.name,d.size,d.media_type,d.sha256,d.created_at,d.owner_id,
+            SELECT d.id,d.name,d.size,d.media_type,d.sha256,d.created_at,d.owner_id,COALESCE(j.status,'') AS indexing_status,
                    snippet(document_fts,-1,'','',' … ',24) AS excerpt,
                    CASE WHEN instr(highlight(document_fts,1,char(1),''),char(1)) > 0 THEN 'filename' ELSE 'metadata' END AS kind,
                    CASE WHEN instr(highlight(document_fts,1,char(1),''),char(1)) > 0 THEN 3 ELSE 2 END AS priority,
@@ -62,9 +62,10 @@ func (s *Service) Search(ctx context.Context, actor auth.User, query string, lim
                    0 AS page,0 AS section
             FROM document_fts JOIN documents d ON d.id = document_fts.document_id
             JOIN users u ON u.id = ?
+            LEFT JOIN document_index_jobs j ON j.document_id = d.id AND j.source_sha256 = d.sha256
             WHERE document_fts MATCH ? AND `+authorization.Visible+`
             UNION ALL
-            SELECT d.id,d.name,d.size,d.media_type,d.sha256,d.created_at,d.owner_id,
+            SELECT d.id,d.name,d.size,d.media_type,d.sha256,d.created_at,d.owner_id,j.status,
                    snippet(passage_fts,0,'','',' … ',24), 'content',1,
                    min(16,length(highlight(passage_fts,0,char(1),''))-length(p.text)),p.page,p.section
             FROM passage_fts JOIN document_passages p ON p.id = passage_fts.rowid
@@ -77,7 +78,7 @@ func (s *Service) Search(ctx context.Context, actor auth.User, query string, lim
                 PARTITION BY id ORDER BY priority DESC,frequency DESC,page,section
             ) AS position FROM hits
         )
-        SELECT id,name,size,media_type,sha256,created_at,owner_id,excerpt,kind,page,section
+        SELECT id,name,size,media_type,sha256,created_at,owner_id,indexing_status,excerpt,kind,page,section
         FROM ranked WHERE position = 1
         ORDER BY priority DESC,frequency DESC,created_at DESC,id
         LIMIT ? OFFSET ?`, actor.ID, expression, actor.ID, expression, limit+1, offset)
@@ -91,7 +92,7 @@ func (s *Service) Search(ctx context.Context, actor auth.User, query string, lim
 		var createdAt string
 		var ownerID *string
 		err = rows.Scan(&hit.Document.ID, &hit.Document.Name, &hit.Document.Size, &hit.Document.MediaType,
-			&hit.Document.SHA256, &createdAt, &ownerID, &hit.Snippet, &hit.Match, &hit.Page, &hit.Section)
+			&hit.Document.SHA256, &createdAt, &ownerID, &hit.Document.IndexingStatus, &hit.Snippet, &hit.Match, &hit.Page, &hit.Section)
 		if err != nil {
 			return SearchPage{}, err
 		}

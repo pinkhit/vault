@@ -9,6 +9,7 @@ import {
   listDocuments,
   uploadDocument,
   APIError,
+  searchDocuments,
 } from './api';
 
 vi.mock('./api', async (importOriginal) => {
@@ -21,6 +22,7 @@ vi.mock('./api', async (importOriginal) => {
     logout: vi.fn(),
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    searchDocuments: vi.fn(),
   };
 });
 const session = {
@@ -212,5 +214,44 @@ describe('authentication', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sign in' }),
     ).toBeVisible();
+  });
+
+  it('clears search results on sign-out and on search session expiry', async () => {
+    vi.mocked(searchDocuments).mockResolvedValue({
+      results: [
+        {
+          document,
+          snippet: 'private search snippet',
+          match: 'content',
+          section: 1,
+        },
+      ],
+      has_more: false,
+    });
+    vi.mocked(logout).mockResolvedValue();
+    const { unmount } = render(<App />);
+    await screen.findByText('Your library starts here');
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'private' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
+    await screen.findByText('private search snippet');
+    fireEvent.click(screen.getByRole('button', { name: /^Sign out$/ }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    expect(
+      screen.queryByText('private search snippet'),
+    ).not.toBeInTheDocument();
+    unmount();
+    vi.mocked(searchDocuments).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    render(<App />);
+    await screen.findByText('Your library starts here');
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'private' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    expect(screen.queryByText('Search results')).not.toBeInTheDocument();
   });
 });
