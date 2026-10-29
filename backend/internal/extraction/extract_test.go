@@ -79,6 +79,25 @@ func TestTXTNormalizationAndReferences(t *testing.T) {
 	}
 }
 
+func TestDOCXExtractionReferencesAndOriginalIntegrity(t *testing.T) {
+	data := testutil.DOCX(t, `<w:p><w:r><w:t>Invoice 合同</w:t></w:r></w:p><w:p><w:r><w:t>REF-2026-007 &lt;script&gt;</w:t></w:r></w:p>`)
+	fixture := saved(t, "invoice.DOCX", data)
+	got, err := Extract(context.Background(), fixture.store, fixture.source)
+	want := []Passage{{Section: 1, Text: "Invoice 合同"}, {Section: 2, Text: "REF-2026-007 <script>"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("passages=%+v error=%v", got, err)
+	}
+	file, err := fixture.store.OpenVerified(fixture.source.ID, fixture.source.Size, fixture.source.SHA256)
+	if err != nil {
+		t.Fatal("DOCX indexing changed original", err)
+	}
+	file.Close()
+	empty := saved(t, "empty.docx", testutil.DOCX(t, `<w:p/>`))
+	if _, err := Extract(context.Background(), empty.store, empty.source); !errors.Is(err, ErrNoText) {
+		t.Fatal("empty body", err)
+	}
+}
+
 func TestExtractionRejectionsAndBounds(t *testing.T) {
 	for _, test := range []struct {
 		name, filename, media string
@@ -87,7 +106,8 @@ func TestExtractionRejectionsAndBounds(t *testing.T) {
 	}{
 		{"empty", "empty.txt", "", nil, ErrNoText},
 		{"whitespace", "empty.txt", "", []byte(" \r\n\t"), ErrNoText},
-		{"unknown format", "file.docx", "", []byte("PK\x03\x04archive"), ErrUnsupported},
+		{"unknown format", "file.xlsx", "", []byte("PK\x03\x04archive"), ErrUnsupported},
+		{"malformed DOCX", "file.docx", "", []byte("PK\x03\x04archive"), ErrMalformed},
 		{"HTML", "file.html", "", []byte("<html><script>active()</script></html>"), ErrUnsupported},
 		{"spoofed text", "file.txt", "text/plain", []byte("%PDF-1.7\nnot a text file"), ErrMalformed},
 		{"spoofed PDF", "file.pdf", "application/pdf", []byte("ordinary text"), ErrMalformed},

@@ -1,6 +1,6 @@
 # Document indexing
 
-Implemented through Checkpoint 4: persistent jobs, a single background worker, atomic upload enqueueing, stored passages, a read-authorized status API and [permission-aware FTS5 search](search.md), using the [bounded TXT/PDF extractor](extraction.md). Search UI, previews and analytics remain later checkpoints. Development remains localhost-only.
+Implemented: persistent jobs, a single background worker, atomic upload enqueueing, stored passages, a read-authorized status API and [permission-aware FTS5 search](search.md), using the [bounded TXT/PDF/DOCX extractor](extraction.md). Search UI, previews and analytics are also implemented. Development remains localhost-only.
 
 ## State and transactions
 
@@ -30,7 +30,7 @@ List/get/search document metadata also projects optional `indexing_status` from 
 
 ## Limits and interview concepts
 
-The search UI is implemented; previews and a manual retry API remain pending. Terminal failures do not automatically restart. The queue stores current state, not attempt history. PDF extraction retains the Linux/Docker requirement; DOCX/OCR remain deferred. No performance benchmark, power-loss guarantee or production readiness is claimed. Preserve the existing volume when rebuilding/restarting; do not repeat account bootstrap or reset data.
+The search UI and previews are implemented; a manual retry API remains pending. Terminal failures do not automatically restart. Migration 007 queues existing DOCX jobs rejected only as unsupported formats; it preserves other terminal states. The queue stores current state, not attempt history. PDF extraction retains the Linux/Docker requirement; OCR remains deferred. No performance benchmark, power-loss guarantee or production readiness is claimed. Preserve the existing volume when rebuilding/restarting; do not repeat account bootstrap or reset data.
 
 The important concepts are additive transactional migrations, atomic queue claims, idempotency, attempt tokens that reject stale writes, and durable state versus process memory. Recovery permits work to run again after interruption; it does not promise exactly-once extraction. Source bytes remain independent of derived indexing state. Search applies current Milestone 2 permissions and source/readiness checks in SQL; FTS passage triggers share the publication transaction.
 

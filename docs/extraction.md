@@ -1,6 +1,6 @@
 # Bounded text extraction — Checkpoint 2
 
-The internal `extraction.Extract` helper supports UTF-8 TXT and text-based PDF. It returns plain-text passages with one-based sections and PDF page numbers (TXT uses page zero). The helper itself does not mutate metadata; Checkpoint 3 connects it to the [durable indexing worker](indexing.md), which persists output transactionally. DOCX is deferred to Checkpoint 7; OCR is not implemented.
+The internal `extraction.Extract` helper supports UTF-8 TXT, text-based PDF and bounded [DOCX main-body text](docx.md). It returns plain-text passages with one-based sections and PDF page numbers (TXT/DOCX use page zero). The helper itself does not mutate metadata; the [durable indexing worker](indexing.md) persists output transactionally. DOCX was added in the first Checkpoint 7 increment; OCR is not implemented. The original Checkpoint 2 verification below is historical.
 
 ## File and resource boundaries
 

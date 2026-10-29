@@ -173,7 +173,7 @@ test('searches indexed text safely on desktop/mobile and clears results after re
   expect(errors).toEqual([]);
 });
 
-test('previews text, JSON, CSV, images and PDF pages safely with keyboard/mobile support', async ({
+test('previews text, DOCX, JSON, CSV, images and PDF pages safely with keyboard/mobile support', async ({
   page,
 }) => {
   await signIn(page);
@@ -197,6 +197,13 @@ test('previews text, JSON, CSV, images and PDF pages safely with keyboard/mobile
       mimeType: 'application/json',
       buffer: Buffer.from('{"html":"<svg onload=alert(1)>","value":42}'),
       text: '"value": 42',
+    },
+    {
+      name: 'preview <img>.docx',
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      buffer: await readFile('../tests/fixtures/fictional-preview.docx'),
+      text: '<script>literal DOCX text</script>',
     },
     {
       name: 'preview.csv',
@@ -318,6 +325,30 @@ test('previews text, JSON, CSV, images and PDF pages safely with keyboard/mobile
   }
   // Search references open the same authorized viewer directly on the PDF page.
   const search = page.getByRole('searchbox');
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              `/api/documents/${ids.get('preview <img>.docx')}/indexing`,
+            )
+          ).json()
+        ).status,
+    )
+    .toBe('ready');
+  await search.fill('DOCX-BROWSER-2026');
+  await search.press('Enter');
+  await page
+    .getByRole('button', { name: 'Preview preview <img>.docx', exact: true })
+    .click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'Fictional DOCX-BROWSER-2026 合同',
+  );
+  await expect(
+    page.getByRole('dialog').locator('script, iframe, img'),
+  ).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await expect
     .poll(
       async () =>

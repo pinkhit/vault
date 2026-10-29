@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/pinkhit/vault/backend/internal/docx"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
 
@@ -44,8 +45,8 @@ type Source struct {
 }
 
 type Passage struct {
-	Page    int // One-based for PDF; zero for TXT.
-	Section int // One-based within the page, or within the TXT document.
+	Page    int // One-based for PDF; zero for TXT/DOCX.
+	Section int // One-based within the page, or within the TXT/DOCX document.
 	Text    string
 }
 
@@ -67,7 +68,8 @@ func Extract(ctx context.Context, store *storage.Store, source Source) ([]Passag
 	mediaType, _, err := mime.ParseMediaType(source.MediaType)
 	extension := strings.ToLower(filepath.Ext(source.Name))
 	if err != nil || !((extension == ".txt" && mediaType == "text/plain") ||
-		(extension == ".pdf" && mediaType == "application/pdf")) {
+		(extension == ".pdf" && mediaType == "application/pdf") ||
+		(extension == ".docx" && mediaType == "application/zip")) {
 		return nil, ErrUnsupported
 	}
 	file, err := store.OpenVerifiedContext(ctx, source.ID, source.Size, source.SHA256)
@@ -87,6 +89,16 @@ func Extract(ctx context.Context, store *storage.Store, source Source) ([]Passag
 	var pages []string
 	if extension == ".pdf" {
 		pages, err = pdfText(ctx, file)
+	} else if extension == ".docx" {
+		var text string
+		text, err = docx.Text(ctx, file, source.Size)
+		switch {
+		case errors.Is(err, docx.ErrLimit):
+			err = ErrLimit
+		case errors.Is(err, docx.ErrMalformed):
+			err = ErrMalformed
+		}
+		pages = []string{text}
 	} else {
 		var data []byte
 		data, err = io.ReadAll(io.LimitReader(file, MaxOutputBytes+1))

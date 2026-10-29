@@ -8,7 +8,7 @@ Use **Preview** beside a library document or search result. Search results with 
 
 The storage layer opens only confined, regular objects with no-follow and size/SHA-256 verification. No static directory exposes uploads. File extension, stored sniffed MIME type and current byte signature must agree with the selected parser; parsing then validates the actual structure. Unknown identity/filename/path parameters are rejected.
 
-- TXT and formatted JSON are React text nodes inside `pre`. CSV cells are text nodes; formulas and links are inert strings. There is no HTML injection API.
+- TXT, [DOCX main-body text](docx.md) and formatted JSON are React text nodes inside `pre`. CSV cells are text nodes; formulas and links are inert strings. There is no HTML injection API.
 - PNG, JPEG and WebP pass image-header dimension checks and full decoding, then are re-encoded as PNG. Original metadata, trailers and active markup are not returned. WebP uses the Go project's pinned [x/image decoder](https://pkg.go.dev/golang.org/x/image@v0.47.0/webp).
 - PDF pages are rasterized with Poppler `pdfinfo`/`pdftoppm` and re-encoded as PNG. This provides an inline paged viewer without exposing PDF scripts, annotations, forms, links, attachments or embedded actions to a browser PDF plugin. Text selection, PDF form interaction, zoom tools and embedded links are intentionally unavailable. Original download remains available.
 - The response is `application/json; charset=utf-8`, with `Content-Disposition: inline`, `nosniff`, `Cache-Control: no-store` and the existing CSP/frame denial headers. PNGs are embedded using the already-allowed `data:image/png;base64` source. No blob URLs, frames, object elements, executable preview origin or CSP relaxation are needed.
@@ -22,6 +22,7 @@ PDF HTTP ranges are unnecessary: the API requests one rendered page at a time. E
 | Source | 25 MiB, checked before storage hashing; no writes to originals |
 | Request preparation | 10-second context; one expensive preview at a time, busy responses fail fast |
 | TXT | First 64 KiB, clipped at a UTF-8 boundary, explicit shortened notice |
+| DOCX | Bounded ZIP/XML validation and at most 2 MiB derived text; first 64 KiB displayed at a UTF-8 boundary, explicit shortened notice; no Word layout or page numbers |
 | CSV | At most 64 KiB input; 200 displayed rows, 32 columns, 4096 bytes per cell; extra rows produce a shortened notice |
 | JSON | At most 64 KiB input, nesting depth 32, formatted output at most 256 KiB; excessive input fails rather than showing invalid partial JSON |
 | Raster image | 8 MiB compressed input/output, 4 million pixels, each dimension at most 4096 |
@@ -40,7 +41,7 @@ The Docker image supplies Poppler, DejaVu fallback fonts and a prebuilt font cac
 
 Poppler remains a trusted native dependency. Resource limits are not a separate UID, network sandbox or filesystem jail for a compromised parser. Go and Poppler security updates remain necessary. Exploit resistance to unknown parser vulnerabilities, exact process peak memory, statistical timing behavior, real ARM hardware and all browser engines have not been established. The current image is a development build.
 
-DOCX/XLSX previews remain scheduled for Checkpoint 7. HTML, SVG, GIF, archives and all unrecognized formats use download fallback. Encrypted PDFs have no password-entry workflow and fail safely. No OCR, analytics, Ollama or remote access is added.
+DOCX text previews were added in Checkpoint 7's first increment; XLSX previews remain a separate increment. HTML, SVG, GIF, general archives and all unrecognized formats use download fallback. Encrypted PDFs have no password-entry workflow and fail safely. No OCR, Ollama or remote access is added.
 
 The app remains localhost HTTP. TLS transport protection, production host/origin configuration, Secure cookies and deployment security headers must be validated together during the later HTTPS deployment work. Existing CSRF and session protections have not been relaxed.
 

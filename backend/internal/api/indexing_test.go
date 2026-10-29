@@ -11,15 +11,26 @@ import (
 
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/indexing"
+	"github.com/pinkhit/vault/backend/internal/testutil"
 )
 
 func TestIndexingStatusRequiresCurrentDocumentReadPermission(t *testing.T) {
-	a, _ := newApp(t, t.TempDir(), 1024)
+	for name, data := range map[string][]byte{
+		"private-index.txt":  []byte("fictional private document"),
+		"private-index.docx": testutil.DOCX(t, `<w:p><w:r><w:t>fictional private document</w:t></w:r></w:p>`),
+	} {
+		t.Run(name, func(t *testing.T) { checkIndexingReadPermission(t, name, data) })
+	}
+}
+
+func checkIndexingReadPermission(t *testing.T, name string, data []byte) {
+	t.Helper()
+	a, _ := newApp(t, t.TempDir(), 2048)
 	owner := createMember(t, a, "index-owner")
 	ownerIdentity, _ := signIn(t, a, owner.Username, memberPassword, nil)
 	reader := createMember(t, a, "index-reader")
 	readerIdentity, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	document := uploadAs(t, a, ownerIdentity, "private-index.txt")
+	document := uploadBytesAs(t, a, ownerIdentity, name, data)
 	path := "/api/documents/" + document.ID + "/indexing"
 	handler := a.Handler("")
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", nil), 401)
@@ -48,7 +59,7 @@ func TestIndexingStatusRequiresCurrentDocumentReadPermission(t *testing.T) {
 	for progress.Status != indexing.Ready {
 		select {
 		case <-deadline.C:
-			t.Fatal("uploaded TXT was not indexed")
+			t.Fatal("uploaded document was not indexed")
 		case <-ticker.C:
 			response = jsonRequest(t, handler, "GET", path, "", ownerIdentity)
 			requireStatus(t, response, 200)
@@ -62,11 +73,20 @@ func TestIndexingStatusRequiresCurrentDocumentReadPermission(t *testing.T) {
 			t.Fatal("status endpoint exposed text or internal metadata")
 		}
 	}
+	if got := searchPage(t, a, ownerIdentity, `"fictional private document"`, 20, 0); len(got.Results) != 1 || got.Results[0].Match != "content" || got.Results[0].Section != 1 {
+		t.Fatal("worker did not publish searchable content with section references")
+	}
 	grant := "/api/documents/" + document.ID + "/permissions/" + reader.ID
 	requireStatus(t, jsonRequest(t, handler, "PUT", grant, `{"level":"read"}`, ownerIdentity), 204)
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", readerIdentity), 200)
+	if got := searchPage(t, a, readerIdentity, `"fictional private document"`, 20, 0); len(got.Results) != 1 {
+		t.Fatal("read grant did not permit content search")
+	}
 	requireStatus(t, jsonRequest(t, handler, "DELETE", grant, "", ownerIdentity), 204)
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", readerIdentity), 404)
+	if got := searchPage(t, a, readerIdentity, `"fictional private document"`, 20, 0); len(got.Results) != 0 {
+		t.Fatal("revoked indexing grant leaked search content")
+	}
 	reader.IsAdmin = true
 	if _, err := a.Documents.Indexing(context.Background(), reader, document.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("cached administrator flag bypassed status SQL authorization", err)

@@ -62,7 +62,7 @@ func TestTextTablesAndJSONRemainLiteralAndBounded(t *testing.T) {
 	}{
 		{"file.html", "<html>active</html>", ErrUnsupported},
 		{"file.svg", "<svg onload='alert(1)'/>", ErrUnsupported},
-		{"file.docx", "PK archive", ErrUnsupported},
+		{"file.docx", "PK archive", ErrMalformed},
 		{"file.xlsx", "PK archive", ErrUnsupported},
 		{"file.png", "not an image", ErrMalformed},
 		{"file.txt", "a\x00b", ErrUnsupported},
@@ -81,6 +81,25 @@ func TestTextTablesAndJSONRemainLiteralAndBounded(t *testing.T) {
 				t.Fatalf("got %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+func TestDOCXTextPreviewAndClipping(t *testing.T) {
+	data := testutil.DOCX(t, `<w:p><w:r><w:t>&lt;script&gt;literal&lt;/script&gt;</w:t></w:r></w:p>`)
+	got, err := render(t, "invoice.docx", data, 1)
+	if err != nil || got.Kind != "text" || got.Text != "<script>literal</script>" || got.Truncated {
+		t.Fatal(got, err)
+	}
+	if _, err := render(t, "invoice.docx", data, 2); !errors.Is(err, ErrPage) {
+		t.Fatal("invented DOCX pages", err)
+	}
+	data = testutil.DOCX(t, `<w:p><w:r><w:t>`+strings.Repeat("合", MaxTextBytes)+`</w:t></w:r></w:p>`)
+	got, err = render(t, "large.docx", data, 1)
+	if err != nil || !got.Truncated || len(got.Text) > MaxTextBytes || !utf8.ValidString(got.Text) {
+		t.Fatal("invalid DOCX clipping", err)
+	}
+	if _, err := render(t, "renamed.docm", data, 1); !errors.Is(err, ErrUnsupported) {
+		t.Fatal("macro-enabled extension accepted", err)
 	}
 }
 

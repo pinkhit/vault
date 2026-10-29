@@ -22,6 +22,8 @@ import (
 	"unicode/utf8"
 
 	_ "golang.org/x/image/webp"
+
+	"github.com/pinkhit/vault/backend/internal/docx"
 )
 
 const (
@@ -88,6 +90,29 @@ func Render(ctx context.Context, file *os.File, name, mediaType string, size int
 	}
 	if page != 1 {
 		return Result{}, ErrPage
+	}
+	if ext == ".docx" {
+		if detected != "application/zip" {
+			return Result{}, ErrMalformed
+		}
+		text, err := docx.Text(ctx, file, size)
+		switch {
+		case errors.Is(err, docx.ErrMalformed):
+			return Result{}, ErrMalformed
+		case errors.Is(err, docx.ErrLimit):
+			return Result{}, ErrLimit
+		case err != nil:
+			return Result{}, err
+		}
+		truncated := len(text) > MaxTextBytes
+		if truncated {
+			end := MaxTextBytes
+			for !utf8.RuneStart(text[end]) {
+				end--
+			}
+			text = text[:end]
+		}
+		return Result{Kind: "text", Text: text, Truncated: truncated}, nil
 	}
 	imageTypes := map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 	if expected, ok := imageTypes[ext]; ok {

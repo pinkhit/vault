@@ -20,7 +20,7 @@ func TestMigrationReopenAndPragmas(t *testing.T) {
 		if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil {
 			t.Fatal(err)
 		}
-		if versions != 6 {
+		if versions != 7 {
 			t.Fatalf("migrations: %d", versions)
 		}
 		if err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
@@ -219,5 +219,57 @@ func TestSearchMigrationPreservesAndIndexesExistingPassages(t *testing.T) {
 	}
 	if _, err := db.Exec("INSERT INTO passage_fts(passage_fts,rank) VALUES ('integrity-check',1)"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDOCXMigrationRequeuesOnlyPreviouslyUnsupportedDOCX(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.sqlite")
+	legacy := legacyDatabase(t, path, "001_documents.sql", "002_authentication.sql", "003_audit_details.sql", "004_document_indexing.sql", "005_document_passages.sql", "006_document_search.sql")
+	cases := []struct {
+		id, name, media, status, message string
+		attempts                         int
+	}{
+		{strings.Repeat("a", 32), "old.DOCX", "application/zip", "unsupported", "unsupported format", 1},
+		{strings.Repeat("b", 32), "failed.docx", "application/zip", "failed", "document could not be parsed", 3},
+		{strings.Repeat("c", 32), "ready.docx", "application/zip", "ready", "", 1},
+		{strings.Repeat("d", 32), "other.xlsx", "application/zip", "unsupported", "unsupported format", 1},
+		{strings.Repeat("e", 32), "spoof.docx", "text/plain", "unsupported", "unsupported format", 1},
+		{strings.Repeat("f", 32), "empty.docx", "application/zip", "unsupported", "no extractable text", 1},
+	}
+	for _, test := range cases {
+		if _, err := legacy.Exec(`INSERT INTO documents(id,name,size,media_type,sha256,created_at)
+            VALUES (?,?,42,?,?,'2026-01-01T00:00:00Z')`, test.id, test.name, test.media, strings.Repeat("a", 64)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := legacy.Exec(`INSERT INTO document_index_jobs(document_id,source_sha256,status,attempts,last_error)
+            VALUES (?,?,?,?,?)`, test.id, strings.Repeat("a", 64), test.status, test.attempts, test.message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for reopen := 0; reopen < 2; reopen++ {
+		db, err := Open(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, test := range cases {
+			var status, message, name, checksum string
+			var attempts int
+			if err := db.QueryRow(`SELECT j.status,j.attempts,j.last_error,d.name,d.sha256 FROM document_index_jobs j
+                JOIN documents d ON d.id=j.document_id WHERE d.id=?`, test.id).Scan(&status, &attempts, &message, &name, &checksum); err != nil {
+				t.Fatal(err)
+			}
+			if i == 0 {
+				test.status, test.attempts, test.message = "pending", 0, ""
+			}
+			if status != test.status || attempts != test.attempts || message != test.message || name != test.name || checksum != strings.Repeat("a", 64) {
+				t.Fatalf("unexpected migration result: %s %s %d %q", test.name, status, attempts, message)
+			}
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
