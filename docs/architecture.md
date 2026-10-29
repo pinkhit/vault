@@ -1,17 +1,17 @@
-# Milestone 1 architecture
+# FamilyVault architecture — Milestone 2
 
-Implemented: one Go process, embedded SQLite migrations, local file objects, and a React browser. Authentication, permissions, extraction, AI and remote access are planned only.
+Implemented: one Go process, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions and audit events. Extraction, AI and remote access remain planned only.
 
 ```mermaid
 flowchart LR
     B[Browser on this machine] -->|HTTP on 127.0.0.1:8080| G[Go net/http API + built React assets]
-    G -->|parameterized SQL| D[(SQLite metadata + WAL)]
+    G -->|parameterized SQL| D[(SQLite metadata, accounts, sessions, grants, audit + WAL)]
     G -->|os.Root operations| S[Staging + original file objects]
     D --- V[Persistent Docker named volume]
     S --- V
 ```
 
-Compose publishes only `127.0.0.1:8080`; the container listener must use `0.0.0.0` inside its network namespace. Native development binds loopback directly. The server rejects foreign Host and Origin headers and cross-site browser requests. Docker's networking and the local host remain trusted. Do not connect other containers or proxy this unauthenticated service remotely.
+Compose publishes only `127.0.0.1:8080`; the container listener must use `0.0.0.0` inside its network namespace. Native development binds loopback directly. The server rejects foreign Host and Origin headers and cross-site browser requests. Docker's networking and the local host remain trusted. Do not connect other containers or expose this development service remotely.
 
 During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `127.0.0.1:8080`. The built application and API use one origin. No CORS allowlist is needed.
 
@@ -19,6 +19,10 @@ During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `
 
 - `cmd/server`: configuration, resource lifecycle, startup reconciliation, signals and HTTP timeouts.
 - `internal/api`: HTTP validation, JSON errors, pagination, local-browser boundary, concurrency limit.
+- `cmd/create-admin`: offline initial account creation under the data-directory lock; no default credentials.
+- `internal/auth`: Argon2id passwords, login throttling, persistent sessions, expiry/revocation and account changes.
+- `internal/authorization`: explicit document read/write/manage checks; no folder inheritance yet.
+- `internal/audit`: structured security/document events sharing mutation transactions.
 - `internal/documents`: filenames, metadata queries, checksum comparison, upload coordination.
 - `internal/storage`: confined file operations, staging, syncing, verification and startup cleanup.
 - `internal/database`: SQLite settings and embedded, ordered, transactional migrations.
@@ -26,14 +30,22 @@ During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `
 
 SQLite uses one pooled connection, foreign keys, a busy timeout, WAL and FULL synchronous mode. A data-directory file lock excludes a second server before migration/recovery. This deliberately targets a single host and process. Read/write scalability can be measured and revisited later.
 
+## Authentication and authorization
+
+Every sensitive route requires a database-backed session. Only health/login and static assets are public. Login requires exact same-origin Origin validation; authenticated writes also require a session-bound CSRF token. Account status and role are loaded on each request. Document SQL checks enabled users, administrator authority, ownership or explicit grants before returning metadata/opening files. Mutations recheck rights in their transaction, with an atomic audit event. Raw session tokens live only in HttpOnly cookies; SQLite holds token hashes and expiry/activity timestamps.
+
+Administrator account/audit reads recheck current administrator authority in the same transaction as the metadata query. Audit details identify permission recipients and before/after rights or account role/status changes. Migration 003 preserves old events with empty details and rejects ordinary SQL history updates/deletes; this does not make the database tamper-evident against its owner. Public static files use a separate `os.Root` to confine symlink resolution to the configured web directory.
+
+Read the [authentication/API guide](authentication.md) and [ADR 002](decisions/002-authentication-and-permissions.md) for the permission table, bootstrap and local HTTP exception. Sessions are revocable and have both absolute and idle expiry. No external identity, AI, mail or network service is introduced.
+
 ## Upload and crash consistency
 
-1. Validate one multipart `file`, its raw filename, body bounds and optional checksum header.
+1. Authenticate the session, validate its CSRF token, then validate one multipart `file`, its raw filename, body bounds and optional checksum header.
 2. Generate a random 128-bit lowercase hexadecimal object ID. The name never becomes a filesystem path.
 3. Stream at most the configured maximum plus one byte into `staging/<id>` (0600), computing SHA-256. Reject empty files, read errors, missing closing boundaries and extra parts.
 4. Sync and close the complete staging file. Compare the client checksum when supplied.
 5. Hard-link the file into `objects/<id>` without overwriting an existing object, then sync the object directory. Both directories are on the same local volume.
-6. Insert complete metadata using parameterized SQL. Only metadata rows are listed or downloadable. A single INSERT is an atomic SQLite transaction.
+6. Recheck that the uploader is enabled and insert complete metadata, ownership and an audit event in one SQLite transaction. Only authorized metadata rows are listed or downloadable; listing filters before pagination.
 7. Remove the staging name. Cleanup failures are logged; startup retries cleanup.
 
 There is **no atomic transaction spanning SQLite and the filesystem**. Before serving, recovery verifies every referenced object's size and SHA-256, removes staging entries, and removes unreferenced objects. A crash before metadata insertion leaves an invisible orphan. A crash after insertion leaves a complete record, possibly with a redundant staging link. A failed/ambiguous INSERT never triggers immediate object deletion: it could have committed. Recovery uses database state to decide safely.

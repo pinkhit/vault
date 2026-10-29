@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -13,6 +14,9 @@ type Config struct {
 	DataDir        string
 	StaticDir      string
 	MaxUploadBytes int64
+	SessionTTL     time.Duration
+	SessionIdleTTL time.Duration
+	SecureCookies  bool
 }
 
 func Load() (Config, error) {
@@ -26,6 +30,18 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("FAMILYVAULT_MAX_UPLOAD_BYTES must be between 1 and 1073741824")
 	}
 	c.MaxUploadBytes = limit
+	c.SessionTTL, err = time.ParseDuration(value("FAMILYVAULT_SESSION_TTL", "8h"))
+	if err != nil || c.SessionTTL < time.Minute || c.SessionTTL > 24*time.Hour {
+		return c, fmt.Errorf("FAMILYVAULT_SESSION_TTL must be between 1m and 24h")
+	}
+	c.SessionIdleTTL, err = time.ParseDuration(value("FAMILYVAULT_SESSION_IDLE_TTL", "30m"))
+	if err != nil || c.SessionIdleTTL < time.Minute || c.SessionIdleTTL > c.SessionTTL {
+		return c, fmt.Errorf("FAMILYVAULT_SESSION_IDLE_TTL must be between 1m and the absolute session TTL")
+	}
+	c.SecureCookies, err = strconv.ParseBool(value("FAMILYVAULT_COOKIE_SECURE", "false"))
+	if err != nil {
+		return c, fmt.Errorf("FAMILYVAULT_COOKIE_SECURE must be true or false")
+	}
 	host, port, err := net.SplitHostPort(c.Address)
 	if err != nil || port == "" {
 		return c, fmt.Errorf("FAMILYVAULT_ADDR must be an IP:port")

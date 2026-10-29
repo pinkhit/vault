@@ -63,7 +63,7 @@ func Open(path string) (*Store, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fail(err)
 	}
-	lock, err := root.OpenFile("server.lock", os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := root.OpenFile("server.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		return fail(err)
 	}
@@ -163,6 +163,9 @@ func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, 
 	if !ValidID(id) {
 		return nil, fmt.Errorf("invalid storage key")
 	}
+	// No-follow is applied by the same open that obtains the descriptor, closing
+	// the leaf-symlink race between a separate Lstat and Open. Nonblocking mode
+	// also lets us reject a substituted FIFO without waiting for a writer.
 	info, err := s.root.Lstat("objects/" + id)
 	if err != nil {
 		return nil, err
@@ -170,9 +173,20 @@ func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, 
 	if !info.Mode().IsRegular() {
 		return nil, ErrIntegrity
 	}
-	f, err := s.root.Open("objects/" + id)
+	f, err := s.root.OpenFile("objects/"+id, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			return nil, ErrIntegrity
+		}
 		return nil, err
+	}
+	info, err = f.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrIntegrity
 	}
 	hash := sha256.New()
 	n, err := io.Copy(hash, f)

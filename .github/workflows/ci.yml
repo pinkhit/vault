@@ -1,4 +1,4 @@
-name: Milestone 1 checks
+name: FamilyVault checks
 on: [push, pull_request]
 permissions:
   contents: read

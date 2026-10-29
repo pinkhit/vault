@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pinkhit/vault/backend/internal/api"
+	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/config"
 	"github.com/pinkhit/vault/backend/internal/database"
 	"github.com/pinkhit/vault/backend/internal/documents"
@@ -63,7 +64,11 @@ func run(log *slog.Logger) error {
 			return fmt.Errorf("frontend build missing: %w", err)
 		}
 	}
-	handler := (&api.API{Documents: service, Log: log}).Handler(c.StaticDir)
+	authentication, err := auth.New(db, c.SessionTTL, c.SessionIdleTTL, c.SecureCookies)
+	if err != nil {
+		return err
+	}
+	handler := (&api.API{Documents: service, Auth: authentication, Log: log}).Handler(c.StaticDir)
 	server := &http.Server{
 		Addr:              c.Address,
 		Handler:           handler,
@@ -77,7 +82,7 @@ func run(log *slog.Logger) error {
 	defer stop()
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
-	log.Warn("unauthenticated development server: synthetic documents only", "address", c.Address)
+	log.Info("authenticated localhost server: synthetic documents only", "address", c.Address)
 	select {
 	case err = <-result:
 		if errors.Is(err, http.ErrServerClosed) {

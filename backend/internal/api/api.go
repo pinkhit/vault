@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
@@ -23,14 +24,28 @@ var checksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 type API struct {
 	Documents *documents.Service
 	Log       *slog.Logger
+	Auth      *auth.Service
 }
 
 func (a *API) Handler(staticDir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", a.health)
-	mux.HandleFunc("GET /api/documents", a.list)
-	mux.HandleFunc("POST /api/documents", a.upload)
-	mux.HandleFunc("GET /api/documents/{id}/download", a.download)
+	mux.HandleFunc("POST /api/auth/login", a.login)
+	mux.HandleFunc("GET /api/auth/session", a.protect(a.currentSession))
+	mux.HandleFunc("POST /api/auth/logout", a.protect(a.logout))
+	mux.HandleFunc("POST /api/auth/revoke-sessions", a.protect(a.revokeSessions))
+	mux.HandleFunc("POST /api/auth/password", a.protect(a.changePassword))
+	mux.HandleFunc("GET /api/admin/users", a.admin(a.users))
+	mux.HandleFunc("POST /api/admin/users", a.admin(a.createUser))
+	mux.HandleFunc("PATCH /api/admin/users/{id}", a.admin(a.updateUser))
+	mux.HandleFunc("GET /api/admin/audit", a.admin(a.auditEvents))
+	mux.HandleFunc("GET /api/documents", a.protect(a.list))
+	mux.HandleFunc("POST /api/documents", a.protect(a.upload))
+	mux.HandleFunc("GET /api/documents/{id}/download", a.protect(a.download))
+	mux.HandleFunc("PATCH /api/documents/{id}", a.protect(a.rename))
+	mux.HandleFunc("GET /api/documents/{id}/permissions", a.protect(a.grants))
+	mux.HandleFunc("PUT /api/documents/{id}/permissions/{userID}", a.protect(a.setGrant))
+	mux.HandleFunc("DELETE /api/documents/{id}/permissions/{userID}", a.protect(a.setGrant))
 	for path, allowed := range map[string]string{
 		"/api/health":                  "GET, HEAD",
 		"/api/documents":               "GET, HEAD, POST",
@@ -45,11 +60,23 @@ func (a *API) Handler(staticDir string) http.Handler {
 		problem(w, http.StatusNotFound, "endpoint not found")
 	})
 	if staticDir != "" {
-		files := http.FileServer(http.Dir(staticDir))
-		mux.Handle("GET /assets/", files)
-		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, staticDir+"/index.html")
-		})
+		// http.Dir and ServeFile follow out-of-root symlinks. Open a confined root
+		// per request so its descriptor is closed after synchronous serving ends.
+		serveStatic := func(w http.ResponseWriter, r *http.Request) {
+			root, err := os.OpenRoot(staticDir)
+			if err != nil {
+				a.internal(w, err)
+				return
+			}
+			defer root.Close()
+			if r.URL.Path == "/" {
+				http.ServeFileFS(w, r, root.FS(), "index.html")
+				return
+			}
+			http.FileServerFS(root.FS()).ServeHTTP(w, r)
+		}
+		mux.HandleFunc("GET /assets/", serveStatic)
+		mux.HandleFunc("GET /{$}", serveStatic)
 	}
 	return a.middleware(mux)
 }
@@ -84,7 +111,7 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Fetch one extra item to determine whether another page exists.
-	docs, err := a.Documents.List(r.Context(), limit+1, offset)
+	docs, err := a.Documents.List(r.Context(), sessionFrom(r).User, limit+1, offset)
 	if err != nil {
 		a.internal(w, err)
 		return
@@ -127,7 +154,7 @@ func (a *API) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reader := &singleFileReader{part: part, multipart: mr, body: r.Body}
-	d, err := a.Documents.Upload(r.Context(), params["filename"], reader, expected)
+	d, err := a.Documents.Upload(r.Context(), sessionFrom(r).User, params["filename"], reader, expected)
 	if err != nil {
 		a.uploadError(w, r, err)
 		return
@@ -176,9 +203,9 @@ func (a *API) download(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusBadRequest, "invalid document ID")
 		return
 	}
-	d, f, err := a.Documents.Download(r.Context(), id)
+	d, f, err := a.Documents.Download(r.Context(), sessionFrom(r).User, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		problem(w, http.StatusNotFound, "document not found")
+		a.securityError(w, r, err)
 		return
 	}
 	if errors.Is(err, storage.ErrIntegrity) || errors.Is(err, os.ErrNotExist) {

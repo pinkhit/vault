@@ -9,6 +9,14 @@ test('upload, reload and download exact original bytes on desktop and mobile', a
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
+  await page.getByLabel('Username').fill('browser-admin');
+  await page
+    .getByLabel('Password', { exact: true })
+    .fill('fictional-browser-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(
     page.getByRole('heading', { name: 'Documents', exact: true }),
   ).toBeVisible();
   await expect(page.getByText('Your library starts here')).toBeVisible();
@@ -55,5 +63,13 @@ test('upload, reload and download exact original bytes on desktop and mobile', a
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
   expect(errors).toEqual([]);
 });

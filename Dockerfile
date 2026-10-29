@@ -11,12 +11,14 @@ COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/create-admin ./cmd/create-admin
 
 FROM alpine:3.23
 RUN addgroup -g 10001 vault && adduser -D -u 10001 -G vault vault \
     && mkdir /data && chown vault:vault /data && chmod 700 /data
 WORKDIR /app
 COPY --from=backend /out/server ./server
+COPY --from=backend /out/create-admin ./create-admin
 COPY --from=frontend /src/frontend/dist ./web
 COPY LICENSE ./LICENSE
 USER 10001:10001

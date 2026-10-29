@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,11 +20,37 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/pinkhit/vault/backend/internal/auth"
 
 	"github.com/pinkhit/vault/backend/internal/database"
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
+
+const fixtureToken = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+const fixtureCSRF = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
+var fixtureActor = auth.User{ID: "cccccccccccccccccccccccccccccccc", Username: "fixture-admin", IsAdmin: true, Enabled: true}
+var fixtureHash = sync.OnceValues(func() (string, error) { return auth.HashPassword("fictional-admin-password") })
+
+func seedFixtureAccount(t *testing.T, db *sql.DB) {
+	t.Helper()
+	hash, err := fixtureHash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT OR IGNORE INTO users(id, username, password_hash, is_admin, enabled, created_at) VALUES (?, ?, ?, 1, 1, ?)`, fixtureActor.ID, fixtureActor.Username, hash, time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(fixtureToken))
+	_, err = db.Exec(`INSERT OR IGNORE INTO sessions(token_hash, user_id, csrf_token, created_at, expires_at, last_seen) VALUES (?, ?, ?, ?, ?, ?)`, hex.EncodeToString(digest[:]), fixtureActor.ID, fixtureCSRF, time.Now().Unix(), time.Now().Add(8*time.Hour).Unix(), time.Now().Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newApp(t *testing.T, dir string, limit int64) (*API, func()) {
 	t.Helper()
@@ -37,7 +64,12 @@ func newApp(t *testing.T, dir string, limit int64) (*API, func()) {
 		t.Fatal(err)
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	a := &API{Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Log: log}
+	seedFixtureAccount(t, db)
+	authentication, err := auth.New(db, 8*time.Hour, 30*time.Minute, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &API{Auth: authentication, Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Log: log}
 	var once sync.Once
 	closeApp := func() { once.Do(func() { db.Close(); store.Close() }) }
 	t.Cleanup(closeApp)
@@ -67,6 +99,8 @@ func multipartBody(t *testing.T, name string, data []byte) ([]byte, string) {
 
 func send(handler http.Handler, method, path string, body []byte, contentType, checksum string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, "http://localhost"+path, bytes.NewReader(body))
+	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
+	req.Header.Set("X-CSRF-Token", fixtureCSRF)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
@@ -117,6 +151,8 @@ func TestUploadDownloadIntegrationAndRestart(t *testing.T) {
 	}
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("X-Checksum-SHA256", checksum)
+	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
+	req.Header.Set("X-CSRF-Token", fixtureCSRF)
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +170,7 @@ func TestUploadDownloadIntegrationAndRestart(t *testing.T) {
 	if err != nil || !bytes.Equal(stored, data) {
 		t.Fatalf("original bytes not persisted: %v", err)
 	}
-	got, err := a.Documents.Get(context.Background(), d.ID)
+	got, err := a.Documents.Get(context.Background(), fixtureActor, d.ID)
 	if err != nil || got != d {
 		t.Fatalf("database metadata mismatch: %+v %v", got, err)
 	}
@@ -143,7 +179,12 @@ func TestUploadDownloadIntegrationAndRestart(t *testing.T) {
 	a, _ = newApp(t, dir, 1<<20)
 	server = httptest.NewServer(a.Handler(""))
 	defer server.Close()
-	response, err = http.Get(server.URL + "/api/documents/" + d.ID + "/download")
+	req, err = http.NewRequest("GET", server.URL+"/api/documents/"+d.ID+"/download", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
+	response, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +527,7 @@ func TestCrashHelper(t *testing.T) {
 		t.Skip("subprocess helper")
 	}
 	a, _ := newApp(t, dir, 1024)
-	if _, err := a.Documents.Upload(context.Background(), "completed.txt", strings.NewReader("fictional completed document"), ""); err != nil {
+	if _, err := a.Documents.Upload(context.Background(), fixtureActor, "completed.txt", strings.NewReader("fictional completed document"), ""); err != nil {
 		t.Fatal(err)
 	}
 	orphan := strings.Repeat("a", 32)
