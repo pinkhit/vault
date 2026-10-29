@@ -8,23 +8,31 @@ import (
 )
 
 func TestAuditFailureCannotPublishSecurityMutations(t *testing.T) {
-	for _, operation := range []string{"create-user", "promote", "reset-password", "change-password", "rename", "logout", "revoke-all", "rotate-login", "download"} {
+	for _, operation := range []string{"create-user", "promote", "reset-password", "change-password", "rename", "logout", "revoke-all", "rotate-login", "download", "grant", "delete"} {
 		t.Run(operation, func(t *testing.T) {
 			a, _ := newApp(t, t.TempDir(), 1024)
 			user := createMember(t, a, "audit-subject")
 			actor, _ := signIn(t, a, user.Username, memberPassword, nil)
 			document := uploadAs(t, a, actor, "audit-private.txt")
-			var oldHash string
-			if err := a.Auth.DB.QueryRow("SELECT password_hash FROM users WHERE id=?", user.ID).Scan(&oldHash); err != nil {
-				t.Fatal(err)
+			type securityState struct {
+				hash, name              string
+				admin                   bool
+				sessions, users, grants int
 			}
-			var oldSessions, oldUsers int
-			if err := a.Auth.DB.QueryRow("SELECT count(*) FROM sessions").Scan(&oldSessions); err != nil {
-				t.Fatal(err)
+			snapshot := func() securityState {
+				var state securityState
+				err := a.Auth.DB.QueryRow(`SELECT password_hash,is_admin,
+                    (SELECT name FROM documents WHERE id=?),
+                    (SELECT count(*) FROM sessions),(SELECT count(*) FROM users),
+                    (SELECT count(*) FROM document_permissions)
+                    FROM users WHERE id=?`, document.ID, user.ID).
+					Scan(&state.hash, &state.admin, &state.name, &state.sessions, &state.users, &state.grants)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return state
 			}
-			if err := a.Auth.DB.QueryRow("SELECT count(*) FROM users").Scan(&oldUsers); err != nil {
-				t.Fatal(err)
-			}
+			before := snapshot()
 			if _, err := a.Auth.DB.Exec(`CREATE TRIGGER fail_security_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(FAIL,'synthetic audit failure'); END`); err != nil {
 				t.Fatal(err)
 			}
@@ -57,6 +65,10 @@ func TestAuditFailureCannotPublishSecurityMutations(t *testing.T) {
 			case "rotate-login":
 				path = "/api/auth/login"
 				body = `{"username":"audit-subject","password":"fictional-member-password"}`
+			case "grant":
+				method, path, body = "PUT", "/api/documents/"+document.ID+"/permissions/"+fixtureActor.ID, `{"level":"read"}`
+			case "delete":
+				method, path = "DELETE", "/api/documents/"+document.ID
 			case "download":
 				method = "GET"
 				path = "/api/documents/" + document.ID + "/download"
@@ -69,23 +81,15 @@ func TestAuditFailureCannotPublishSecurityMutations(t *testing.T) {
 			if response.Header().Get("Content-Disposition") != "" || strings.Contains(response.Body.String(), "fictional private document") {
 				t.Fatal("audit failure released document bytes")
 			}
-			var hash, name string
-			var admin bool
-			var sessions, users int
-			if err := a.Auth.DB.QueryRow("SELECT password_hash,is_admin FROM users WHERE id=?", user.ID).Scan(&hash, &admin); err != nil {
-				t.Fatal(err)
-			}
-			if err := a.Auth.DB.QueryRow("SELECT name FROM documents WHERE id=?", document.ID).Scan(&name); err != nil {
-				t.Fatal(err)
-			}
-			if err := a.Auth.DB.QueryRow("SELECT count(*) FROM sessions").Scan(&sessions); err != nil {
-				t.Fatal(err)
-			}
-			if err := a.Auth.DB.QueryRow("SELECT count(*) FROM users").Scan(&users); err != nil {
-				t.Fatal(err)
-			}
-			if hash != oldHash || admin || name != document.Name || sessions != oldSessions || users != oldUsers {
+			if after := snapshot(); after != before {
 				t.Fatal("security state changed without its audit event")
+			}
+			if operation == "delete" {
+				file, err := a.Documents.Store.OpenVerified(document.ID, document.Size, document.SHA256)
+				if err != nil {
+					t.Fatal("failed deletion removed original bytes", err)
+				}
+				file.Close()
 			}
 			requireStatus(t, jsonRequest(t, handler, "GET", "/api/auth/session", "", actor), 200)
 		})

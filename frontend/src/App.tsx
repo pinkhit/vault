@@ -9,8 +9,13 @@ import {
   uploadDocument,
   type DocumentPage,
   type Health,
+  type DocumentRecord,
 } from './api';
 import DocumentLibrary from './DocumentLibrary';
+import DeleteDocumentButton from './DeleteDocumentButton';
+import DocumentSearch from './DocumentSearch';
+import DocumentPreview from './DocumentPreview';
+import StorageOverview from './StorageOverview';
 import { formatBytes } from './format';
 import LoginForm from './LoginForm';
 
@@ -99,6 +104,11 @@ function DocumentBrowser({
   const [uploadError, setUploadError] = useState('');
   const [notice, setNotice] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [showStorage, setShowStorage] = useState(false);
+  const [preview, setPreview] = useState<{
+    document: DocumentRecord;
+    page: number;
+  } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -146,6 +156,7 @@ function DocumentBrowser({
   }, [offset, revision]);
 
   function refresh() {
+    setLoading(true);
     setRevision((value) => value + 1);
   }
 
@@ -197,6 +208,24 @@ function DocumentBrowser({
     }
   }
 
+  function renderDelete(document: DocumentRecord) {
+    return (
+      <DeleteDocumentButton
+        document={document}
+        user={session.user}
+        onUnauthorized={onSignOut}
+        onDeleted={() => {
+          setNotice(`${document.name} deleted.`);
+          setPreview((current) =>
+            current?.document.id === document.id ? null : current,
+          );
+          setOffset(0);
+          refresh();
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <header className="topbar">
@@ -208,6 +237,16 @@ function DocumentBrowser({
         </a>
         <div className="header-actions">
           <span>{session.user.username}</span>
+          {session.user.is_admin && (
+            <button
+              className="secondary"
+              aria-expanded={showStorage}
+              aria-controls="storage-overview"
+              onClick={() => setShowStorage((value) => !value)}
+            >
+              Storage overview
+            </button>
+          )}
           <button
             className="secondary"
             disabled={uploading || signingOut}
@@ -254,6 +293,9 @@ function DocumentBrowser({
               Retry connection
             </button>
           </p>
+        )}
+        {session.user.is_admin && showStorage && (
+          <StorageOverview onUnauthorized={onSignOut} />
         )}
         <section className="upload-card" aria-labelledby="upload-title">
           <div>
@@ -307,16 +349,35 @@ function DocumentBrowser({
             {uploadError}
           </p>
         )}
-        <DocumentLibrary
-          page={page}
-          offset={offset}
-          loading={loading}
-          error={listError}
-          onRefresh={refresh}
-          onPageChange={setOffset}
-        />
+        <DocumentSearch
+          revision={revision}
+          onUnauthorized={onSignOut}
+          onClear={refresh}
+          onPreview={(document, page = 1) => setPreview({ document, page })}
+          renderDelete={renderDelete}
+        >
+          <DocumentLibrary
+            page={page}
+            offset={offset}
+            loading={loading}
+            error={listError}
+            onRefresh={refresh}
+            onPageChange={setOffset}
+            onPreview={(document) => setPreview({ document, page: 1 })}
+            renderDelete={renderDelete}
+          />
+        </DocumentSearch>
+        {preview && (
+          <DocumentPreview
+            key={`${preview.document.id}:${preview.page}`}
+            document={preview.document}
+            initialPage={preview.page}
+            onClose={() => setPreview(null)}
+            onUnauthorized={onSignOut}
+          />
+        )}
         <footer>
-          FamilyVault <span>Milestone 2 · Authenticated local vault</span>
+          FamilyVault <span>Authenticated local vault · Document search</span>
         </footer>
       </main>
     </>

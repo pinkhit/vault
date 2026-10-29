@@ -22,10 +22,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pinkhit/vault/backend/internal/analytics"
 	"github.com/pinkhit/vault/backend/internal/auth"
 
 	"github.com/pinkhit/vault/backend/internal/database"
 	"github.com/pinkhit/vault/backend/internal/documents"
+	"github.com/pinkhit/vault/backend/internal/indexing"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
 
@@ -69,7 +71,7 @@ func newApp(t *testing.T, dir string, limit int64) (*API, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &API{Auth: authentication, Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Log: log}
+	a := &API{Auth: authentication, Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Storage: analytics.New(db, store.VolumeCapacity, false), Log: log}
 	var once sync.Once
 	closeApp := func() { once.Do(func() { db.Close(); store.Close() }) }
 	t.Cleanup(closeApp)
@@ -97,19 +99,21 @@ func multipartBody(t *testing.T, name string, data []byte) ([]byte, string) {
 	return b.Bytes(), writer.FormDataContentType()
 }
 
-func send(handler http.Handler, method, path string, body []byte, contentType, checksum string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, "http://localhost"+path, bytes.NewReader(body))
-	req.AddCookie(&http.Cookie{Name: "familyvault_session", Value: fixtureToken})
-	req.Header.Set("X-CSRF-Token", fixtureCSRF)
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
-	}
-	if checksum != "" {
-		req.Header.Set("X-Checksum-SHA256", checksum)
-	}
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-	return w
+// send exercises the fixture account without a browser Origin header.
+func send(t *testing.T, handler http.Handler, method, path string, body []byte, contentType, checksum string) *httptest.ResponseRecorder {
+	t.Helper()
+	return asUser(t, handler, method, path, body, contentType, fixtureIdentity(), func(req *http.Request) {
+		req.Header.Del("Origin")
+		if checksum != "" {
+			req.Header.Set("X-Checksum-SHA256", checksum)
+		}
+	})
+}
+
+func uploadBytesAs(t *testing.T, a *API, actor *identity, name string, data []byte) documents.Document {
+	t.Helper()
+	body, kind := multipartBody(t, name, data)
+	return documentFrom(t, asUser(t, a.Handler(""), "POST", "/api/documents", body, kind, actor, nil))
 }
 
 func documentFrom(t *testing.T, w *httptest.ResponseRecorder) documents.Document {
@@ -231,7 +235,7 @@ func TestRejectedUploadsLeaveNoCompletedDocuments(t *testing.T) {
 			if tc.mutate != nil {
 				body = tc.mutate(body)
 			}
-			w := send(a.Handler(""), "POST", "/api/documents", body, ct, tc.checksum)
+			w := send(t, a.Handler(""), "POST", "/api/documents", body, ct, tc.checksum)
 			if w.Code != tc.status {
 				t.Fatalf("status %d, want %d: %s", w.Code, tc.status, w.Body.String())
 			}
@@ -263,7 +267,7 @@ func TestMalformedMultipartAndRequestLimits(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			w := send(h, "POST", "/api/documents", tc.body, tc.ct, "")
+			w := send(t, h, "POST", "/api/documents", tc.body, tc.ct, "")
 			if w.Code != tc.status {
 				t.Fatalf("status %d", w.Code)
 			}
@@ -302,7 +306,7 @@ func TestMalformedMultipartAndRequestLimits(t *testing.T) {
 			if kind == "oversized overhead" {
 				b.Write(bytes.Repeat([]byte("x"), 70<<10))
 			}
-			w := send(h, "POST", "/api/documents", b.Bytes(), writer.FormDataContentType(), "")
+			w := send(t, h, "POST", "/api/documents", b.Bytes(), writer.FormDataContentType(), "")
 			want := 400
 			if kind == "oversized overhead" {
 				want = 413
@@ -323,13 +327,13 @@ func TestDuplicateNamesAndPagination(t *testing.T) {
 	ids := map[string]bool{}
 	for i := 0; i < 3; i++ {
 		body, ct := multipartBody(t, "invoice.txt", []byte(fmt.Sprintf("fictional-%d", i)))
-		d := documentFrom(t, send(h, "POST", "/api/documents", body, ct, ""))
+		d := documentFrom(t, send(t, h, "POST", "/api/documents", body, ct, ""))
 		if ids[d.ID] {
 			t.Fatal("duplicate ID")
 		}
 		ids[d.ID] = true
 	}
-	w := send(h, "GET", "/api/documents?limit=2", nil, "", "")
+	w := send(t, h, "GET", "/api/documents?limit=2", nil, "", "")
 	var page struct {
 		Documents []documents.Document `json:"documents"`
 		HasMore   bool                 `json:"has_more"`
@@ -343,7 +347,7 @@ func TestDuplicateNamesAndPagination(t *testing.T) {
 	if page.Documents[0].CreatedAt.Before(page.Documents[1].CreatedAt) {
 		t.Fatal("incorrect ordering")
 	}
-	w = send(h, "GET", "/api/documents?limit=2&offset=2", nil, "", "")
+	w = send(t, h, "GET", "/api/documents?limit=2&offset=2", nil, "", "")
 	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +365,7 @@ func TestConcurrentUploads(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w := send(h, "POST", "/api/documents", body, ct, "")
+			w := send(t, h, "POST", "/api/documents", body, ct, "")
 			if w.Code != 201 {
 				t.Errorf("status %d: %s", w.Code, w.Body.String())
 			}
@@ -381,7 +385,7 @@ func TestDatabaseFailureAndOrphanRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, ct := multipartBody(t, "invoice.txt", []byte("fictional"))
-	w := send(a.Handler(""), "POST", "/api/documents", body, ct, "")
+	w := send(t, a.Handler(""), "POST", "/api/documents", body, ct, "")
 	if w.Code != 500 || count(t, a) != 0 {
 		t.Fatalf("failed insert became visible: %d %s", w.Code, w.Body.String())
 	}
@@ -405,7 +409,7 @@ func TestDownloadRejectsCorruptionAndSymlink(t *testing.T) {
 			a, _ := newApp(t, dir, 1024)
 			h := a.Handler("")
 			body, ct := multipartBody(t, "invoice.txt", []byte("fictional"))
-			d := documentFrom(t, send(h, "POST", "/api/documents", body, ct, ""))
+			d := documentFrom(t, send(t, h, "POST", "/api/documents", body, ct, ""))
 			path := filepath.Join(dir, "objects", d.ID)
 			if kind == "corrupt" {
 				if err := os.WriteFile(path, []byte("tampered"), 0600); err != nil {
@@ -425,7 +429,7 @@ func TestDownloadRejectsCorruptionAndSymlink(t *testing.T) {
 					}
 				}
 			}
-			w := send(h, "GET", "/api/documents/"+d.ID+"/download", nil, "", "")
+			w := send(t, h, "GET", "/api/documents/"+d.ID+"/download", nil, "", "")
 			if w.Code != 409 {
 				t.Fatalf("status %d: %s", w.Code, w.Body.String())
 			}
@@ -455,7 +459,7 @@ func TestEndpointsAndLocalBoundary(t *testing.T) {
 		{"/api/missing", 404},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
-			w := send(h, "GET", tc.path, nil, "", "")
+			w := send(t, h, "GET", tc.path, nil, "", "")
 			if w.Code != tc.status {
 				t.Fatalf("status %d", w.Code)
 			}
@@ -492,7 +496,7 @@ func TestEndpointsAndLocalBoundary(t *testing.T) {
 			}
 		})
 	}
-	w := send(h, "DELETE", "/api/documents", nil, "", "")
+	w := send(t, h, "DELETE", "/api/documents", nil, "", "")
 	if w.Code != 405 {
 		t.Fatalf("method status %d", w.Code)
 	}
@@ -509,6 +513,43 @@ func TestProcessTerminationRecovery(t *testing.T) {
 	a, _ := newApp(t, dir, 1024)
 	if count(t, a) != 1 {
 		t.Fatal("completed document lost after termination")
+	}
+	var state string
+	if err := a.Documents.DB.QueryRow("SELECT status FROM document_index_jobs").Scan(&state); err != nil || state != "processing" {
+		t.Fatal("helper did not persist an interrupted indexing claim", state, err)
+	}
+	if recovered, err := indexing.Recover(context.Background(), a.Documents.DB); err != nil || recovered != 1 {
+		t.Fatal("crashed claim not recovered", recovered, err)
+	}
+	workCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- indexing.NewWorker(a.Documents.DB, a.Documents.Store, a.Log).Run(workCtx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var attempts int
+		if err := a.Documents.DB.QueryRow("SELECT status,attempts FROM document_index_jobs").Scan(&state, &attempts); err != nil {
+			t.Fatal(err)
+		}
+		if state == "ready" {
+			if attempts != 2 || len(searchPage(t, a, fixtureIdentity(), `"fictional completed document"`, 20, 0).Results) != 1 {
+				t.Fatal("crash recovery lost indexed content/attempt count")
+			}
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("crash recovery did not finish")
+		case <-ticker.C:
+		}
 	}
 	for _, sub := range []struct {
 		dir  string
@@ -538,6 +579,9 @@ func TestCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := a.Documents.Store.Stage(strings.Repeat("b", 32), strings.NewReader("interrupted upload"), 1024); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := indexing.Claim(context.Background(), a.Documents.DB); err != nil {
 		t.Fatal(err)
 	}
 	os.Exit(0)

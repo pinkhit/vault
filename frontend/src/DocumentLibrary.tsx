@@ -1,5 +1,7 @@
-import type { DocumentPage } from './api';
+import type { ReactNode } from 'react';
+import type { DocumentPage, DocumentRecord } from './api';
 import { formatBytes } from './format';
+import IndexingBadge from './IndexingBadge';
 
 interface DocumentLibraryProps {
   page: DocumentPage;
@@ -8,6 +10,8 @@ interface DocumentLibraryProps {
   error: string;
   onRefresh: () => void;
   onPageChange: (offset: number) => void;
+  onPreview: (document: DocumentRecord) => void;
+  renderDelete?: (document: DocumentRecord) => ReactNode;
 }
 
 export default function DocumentLibrary({
@@ -17,6 +21,8 @@ export default function DocumentLibrary({
   error,
   onRefresh,
   onPageChange,
+  onPreview,
+  renderDelete,
 }: DocumentLibraryProps) {
   function renderDocuments() {
     if (error) {
@@ -72,6 +78,7 @@ export default function DocumentLibrary({
               <tr key={document.id}>
                 <td>
                   <span className="document-name">{document.name}</span>
+                  <IndexingBadge status={document.indexing_status} />
                   <details>
                     <summary>SHA-256 checksum</summary>
                     <code>{document.sha256}</code>
@@ -88,6 +95,13 @@ export default function DocumentLibrary({
                   </time>
                 </td>
                 <td>
+                  <button
+                    className="secondary preview-button"
+                    onClick={() => onPreview(document)}
+                    aria-label={`Preview ${document.name}`}
+                  >
+                    Preview
+                  </button>
                   <a
                     className="download"
                     href={`/api/documents/${document.id}/download`}
@@ -95,6 +109,7 @@ export default function DocumentLibrary({
                   >
                     Download <span aria-hidden="true">↓</span>
                   </a>
+                  {renderDelete?.(document)}
                 </td>
               </tr>
             ))}
@@ -113,7 +128,7 @@ export default function DocumentLibrary({
       <div className="section-heading">
         <div>
           <h2 id="library-title">Document library</h2>
-          <p>Newest uploads first</p>
+          <p>Newest uploads first · Refresh to update indexing status</p>
         </div>
         <button className="secondary" disabled={loading} onClick={onRefresh}>
           Refresh
