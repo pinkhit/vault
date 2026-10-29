@@ -1,0 +1,7 @@
+FICTIONAL DOCUMENT — FOR DEVELOPMENT ONLY
+Supplier: Example Stationery Pte Ltd (fictional)
+Customer: Sample Family Business (fictional)
+Invoice: DEMO-2026-001
+Description: Printer paper, 5 reams
+Total: SGD 32.50
+No real business or personal data.

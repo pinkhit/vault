@@ -3,6 +3,7 @@
 !.env.example
 
 /data/
+/backend/data/
 /storage/
 /uploads/
 /backups/
@@ -12,6 +13,20 @@
 *.db-*
 *.sqlite
 *.sqlite3
+*.sqlite3-*
+*.sqlite-*
+*.db-journal
+*.pem
+*.key
+.aws/
+coverage.out
+/backend/bin/
+/backend/server
+/backend/create-admin
+/frontend/coverage/
+/frontend/playwright-report/
+/frontend/test-results/
+*.tsbuildinfo
 
 node_modules/
 dist/
