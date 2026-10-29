@@ -489,6 +489,8 @@ func TestEndpointsAndLocalBoundary(t *testing.T) {
 			r.Host = tc.host
 			r.Header.Set("Origin", tc.origin)
 			r.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+			r.Header.Set("X-Forwarded-Host", "vault.example.ts.net")
+			r.Header.Set("X-Forwarded-Proto", "https")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != tc.status {

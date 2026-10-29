@@ -26,6 +26,7 @@ def main():
         os.environ,
         FAMILYVAULT_PORT="0",
         FAMILYVAULT_COOKIE_SECURE="false",
+        FAMILYVAULT_PUBLIC_ORIGIN="",
         FAMILYVAULT_SESSION_TTL="8h",
         FAMILYVAULT_SESSION_IDLE_TTL="30m",
         FAMILYVAULT_MAX_UPLOAD_BYTES="26214400",
@@ -220,7 +221,19 @@ def main():
         assert request("GET", preview_path)[0] == 401
         assert request("GET", "/api/admin/storage")[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
-        print("PASS: interrupted/pending indexing recovery, TXT/PDF/DOCX/XLSX previews, malformed-file preservation, search, storage totals and session persistence/revocation")
+        # Check Compose -> config -> middleware wiring without exposing a network proxy.
+        origin = "https://vault.example.ts.net"
+        environment.update(FAMILYVAULT_PUBLIC_ORIGIN=origin, FAMILYVAULT_COOKIE_SECURE="true")
+        run("up", "-d", "--wait")
+        base_url = application_url()
+        assert request("GET", "/api/health", headers={"Origin": ""})[0] == 200
+        assert request("GET", "/", headers={"Origin": ""})[0] == 403
+        public_headers = {"Host": "vault.example.ts.net", "Origin": origin}
+        status, body, _ = request("GET", "/api/health", headers=public_headers)
+        assert status == 200 and json.loads(body)["mode"] == "private-https"
+        assert request("GET", "/api/documents", headers=public_headers)[0] == 401
+        assert request("GET", "/api/health", headers={"Host": "evil.example", "Origin": origin})[0] == 403
+        print("PASS: indexing recovery, previews, original integrity, search, storage, sessions and configured HTTPS origin boundary")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)

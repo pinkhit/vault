@@ -72,7 +72,7 @@ export default function LoginForm({
         </p>
       </section>
       <p className="warning">
-        <strong>Synthetic documents only.</strong> Localhost development;
+        <strong>Synthetic documents only.</strong> Development demonstration;
         production backups and deployment are not ready.
       </p>
     </main>

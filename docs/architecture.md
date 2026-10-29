@@ -1,19 +1,20 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with search, indexing indicators and read-only previews, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF/DOCX indexing and a permission-aware FTS5 search API. Administrator storage analytics uses SQLite metadata and a cached filesystem provider. DOCX uses the same bounded text reader for indexing and preview; [format limits](docx.md) apply. [XLSX worksheet previews](xlsx.md) share the Office ZIP/XML reader. AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with search, indexing indicators and read-only previews, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF/DOCX indexing and a permission-aware FTS5 search API. Administrator storage analytics uses SQLite metadata and a cached filesystem provider. DOCX uses the same bounded text reader for indexing and preview; [format limits](docx.md) apply. [XLSX worksheet previews](xlsx.md) share the Office ZIP/XML reader. Private HTTPS demonstration access uses native Tailscale Serve on the host; [setup and verification](private-access.md) distinguish this from production deployment. AI remains planned.
 
 Previews reuse document read authorization and confined, checksum-verified storage. The [preview boundary](previews.md) returns escaped text/tables or generated PNGs; PDFs are rasterized by bounded Poppler subprocesses. A shared `pdfutil` runner keeps extraction and preview process limits consistent. No inline original, public object directory, new schema or separate service is introduced.
 
 ```mermaid
 flowchart LR
-    B[Browser on this machine] -->|HTTP on 127.0.0.1:8080| G[Go net/http API + built React assets]
+    B[Browser on a tailnet device] -->|HTTPS| T[Native Tailscale Serve on host]
+    T -->|HTTP on 127.0.0.1:8080| G[Go net/http API + built React assets]
     G -->|parameterized SQL| D[(SQLite metadata, accounts, sessions, grants, audit + WAL)]
     G -->|os.Root operations| S[Staging + original file objects]
     D --- V[Persistent Docker named volume]
     S --- V
 ```
 
-Compose publishes only `127.0.0.1:8080`; the container listener must use `0.0.0.0` inside its network namespace. Native development binds loopback directly. The server rejects foreign Host and Origin headers and cross-site browser requests. Docker's networking and the local host remain trusted. Do not connect other containers or expose this development service remotely.
+Compose publishes only `127.0.0.1:8080`; the container listener must use `0.0.0.0` inside its network namespace. Native development binds loopback directly. The server rejects foreign Host and Origin headers and cross-site browser requests. Default operation is localhost HTTP; private demonstration access uses the explicitly configured HTTPS origin behind Serve. Docker's networking, the local host and the TLS proxy remain trusted. Keep the backend private and do not connect untrusted containers.
 
 During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `127.0.0.1:8080`. The built application and API use one origin. No CORS allowlist is needed.
 
@@ -37,6 +38,8 @@ SQLite uses one pooled connection, foreign keys, a busy timeout, WAL and FULL sy
 ## Authentication and authorization
 
 Every sensitive route requires a database-backed session. Only health/login and static assets are public. Login requires exact same-origin Origin validation; authenticated writes also require a session-bound CSRF token. Account status and role are loaded on each request. Document SQL checks enabled users, administrator authority, ownership or explicit grants before returning metadata/opening files. Mutations recheck rights in their transaction, with an atomic audit event. Raw session tokens live only in HttpOnly cookies; SQLite holds token hashes and expiry/activity timestamps.
+
+[Milestone 5 Checkpoint 1](private-access.md) adds an optional exact HTTPS origin and rejects that mode unless Secure cookies are enabled. Default Host/Origin checks remain localhost HTTP. In configured mode, only the public Host and HTTPS Origin are accepted, with a local health-probe exception; forwarding and Tailscale identity headers never authorize requests. Checkpoint 2 enables the trusted host-side Tailscale TLS proxy without moving the app or its data out of Docker. Docker's published port remains loopback-only.
 
 Administrator account/audit reads recheck current administrator authority in the same transaction as the metadata query. Audit details identify permission recipients and before/after rights or account role/status changes. Migration 003 preserves old events with empty details and rejects ordinary SQL history updates/deletes; this does not make the database tamper-evident against its owner. Public static files use a separate `os.Root` to confine symlink resolution to the configured web directory.
 

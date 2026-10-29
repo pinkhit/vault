@@ -41,6 +41,7 @@ export default defineConfig({
           FAMILYVAULT_STATIC_DIR: '../frontend/dist',
           FAMILYVAULT_CONTAINER: '',
           FAMILYVAULT_COOKIE_SECURE: 'false',
+          FAMILYVAULT_PUBLIC_ORIGIN: '',
           FAMILYVAULT_SESSION_TTL: '8h',
           FAMILYVAULT_SESSION_IDLE_TTL: '30m',
           FAMILYVAULT_MAX_UPLOAD_BYTES: '26214400',

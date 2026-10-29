@@ -1,6 +1,6 @@
 # Accounts, sessions and document permissions
 
-Milestone 2 is localhost-only development. Use synthetic documents. No Tailscale, Ollama, remote deployment or production backup workflow is implemented.
+Milestone 2 introduced localhost-only development. [Milestone 5](private-access.md) adds an explicitly configured HTTPS origin and host-side Tailscale Serve for private demonstration access; application login and document permissions remain mandatory. Use synthetic documents. No Ollama or production backup workflow is implemented.
 
 ## First administrator and upgrades
 
@@ -28,11 +28,11 @@ Successful login creates a new random 256-bit session token and an independent C
 
 Default expiry is eight hours absolute and thirty minutes idle. Each authenticated request checks the database, account status and both expiries; activity cannot extend the absolute deadline. Sessions survive server/container restarts. Logout revokes the current session. All-device logout, password change, administrator password reset, account disablement and role changes revoke every session for that account. Re-enabling an account does not resurrect old sessions. Requests already authorized and in progress may finish; subsequent requests use current permissions/session state.
 
-Local HTTP development explicitly uses `FAMILYVAULT_COOKIE_SECURE=false`. Setting it true uses Secure and the `__Host-familyvault_session` name, but does not create HTTPS. HTTPS deployment is a later milestone. Do not expose either mode remotely yet. This model follows the [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+Local HTTP development explicitly uses `FAMILYVAULT_COOKIE_SECURE=false`. Setting it true uses Secure and the `__Host-familyvault_session` name, but does not create HTTPS. For private HTTPS use both the configured public origin and Secure cookies behind [Tailscale Serve](private-access.md); the cookie flag alone does not install a TLS proxy. This model follows the [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
 
 ## CSRF and brute-force protection
 
-Login requires JSON and an exact `Origin: http://<request-host>` header, including the port when present. This also applies to command-line clients. Authenticated mutations require `X-CSRF-Token` matching the current session. `GET /api/auth/session` supplies it to an already authenticated same-origin browser. Missing/foreign/null origins are rejected at login; foreign origins and cross-site Fetch Metadata are rejected globally. CORS is not enabled. Cookies alone never authorize a state-changing request.
+Login requires JSON and an exact Origin header: `http://<request-host>` in default localhost mode, or the configured `FAMILYVAULT_PUBLIC_ORIGIN` in HTTPS mode. This also applies to command-line clients. Authenticated mutations require `X-CSRF-Token` matching the current session. `GET /api/auth/session` supplies it to an already authenticated same-origin browser. Missing/foreign/null origins are rejected at login; foreign origins and cross-site Fetch Metadata are rejected globally. CORS is not enabled. Cookies alone never authorize a state-changing request.
 
 Five login attempts per normalized account and fifty per socket peer IP are allowed per fifteen-minute window. Limits persist in SQLite and ignore `X-Forwarded-For`. A successful login resets the account budget; the IP budget still limits repeated successful logins. Unknown accounts use a dummy Argon2id hash, and invalid/disabled/unknown credentials receive the same error. Two concurrent login hashes and eight overall requests bound resource consumption. The bounded limiter table fails closed at capacity. Failed logins can temporarily lock out a known account; this is a documented availability tradeoff, not a distributed abuse-defense system.
 

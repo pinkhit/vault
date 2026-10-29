@@ -84,7 +84,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 func (a *API) login(w http.ResponseWriter, r *http.Request) {
 	// Login has no authenticated CSRF token yet. Requiring the exact browser
 	// Origin (also for command-line clients) prevents login CSRF.
-	if r.Header.Get("Origin") != "http://"+r.Host {
+	if r.Header.Get("Origin") != a.requestOrigin(r) {
 		problem(w, http.StatusForbidden, "login requires a same-origin Origin header")
 		return
 	}
