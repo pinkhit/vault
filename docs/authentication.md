@@ -1,6 +1,6 @@
 # Accounts, sessions and document permissions
 
-Milestone 2 introduced localhost-only development. [Milestone 5 Checkpoint 1](private-access.md) adds an optional, explicitly configured HTTPS origin; live private-network verification remains pending. Use synthetic documents. No Ollama or production backup workflow is implemented.
+Milestone 2 introduced localhost-only development. [Milestone 5](private-access.md) adds an explicitly configured HTTPS origin and host-side Tailscale Serve for private demonstration access; application login and document permissions remain mandatory. Use synthetic documents. No Ollama or production backup workflow is implemented.
 
 ## First administrator and upgrades
 
@@ -28,7 +28,7 @@ Successful login creates a new random 256-bit session token and an independent C
 
 Default expiry is eight hours absolute and thirty minutes idle. Each authenticated request checks the database, account status and both expiries; activity cannot extend the absolute deadline. Sessions survive server/container restarts. Logout revokes the current session. All-device logout, password change, administrator password reset, account disablement and role changes revoke every session for that account. Re-enabling an account does not resurrect old sessions. Requests already authorized and in progress may finish; subsequent requests use current permissions/session state.
 
-Local HTTP development explicitly uses `FAMILYVAULT_COOKIE_SECURE=false`. Setting it true uses Secure and the `__Host-familyvault_session` name, but does not create HTTPS. HTTPS deployment is a later milestone. Do not expose either mode remotely yet. This model follows the [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+Local HTTP development explicitly uses `FAMILYVAULT_COOKIE_SECURE=false`. Setting it true uses Secure and the `__Host-familyvault_session` name, but does not create HTTPS. For private HTTPS use both the configured public origin and Secure cookies behind [Tailscale Serve](private-access.md); the cookie flag alone does not install a TLS proxy. This model follows the [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
 
 ## CSRF and brute-force protection
 
