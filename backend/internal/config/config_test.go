@@ -45,3 +45,41 @@ func TestAuthenticationSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicOriginRequiresExactHTTPSAndSecureCookies(t *testing.T) {
+	for _, test := range []struct {
+		origin string
+		secure string
+		valid  bool
+	}{
+		{"", "false", true},
+		{"https://vault.example.ts.net", "true", true},
+		{"https://vault.example.ts.net:8443", "true", true},
+		{"https://vault.example.ts.net", "false", false},
+		{"http://vault.example.ts.net", "true", false},
+		{"https://vault.example.ts.net/", "true", false},
+		{"https://vault.example.ts.net/api", "true", false},
+		{"https://vault.example.ts.net?", "true", false},
+		{"https://vault.example.ts.net#", "true", false},
+		{"https://user@vault.example.ts.net", "true", false},
+		{"https://*.ts.net", "true", false},
+		{"https://vault.example.ts.net:", "true", false},
+		{"https://vault.example.ts.net:0", "true", false},
+		{"https://vault.example.ts.net:65536", "true", false},
+		{"https://vault.example.ts.net:bad", "true", false},
+		{"https://", "true", false},
+		{" https://vault.example.ts.net", "true", false},
+	} {
+		t.Run(test.origin+"/secure="+test.secure, func(t *testing.T) {
+			t.Setenv("FAMILYVAULT_PUBLIC_ORIGIN", test.origin)
+			t.Setenv("FAMILYVAULT_COOKIE_SECURE", test.secure)
+			config, err := Load()
+			if (err == nil) != test.valid {
+				t.Fatalf("valid=%t error=%v", test.valid, err)
+			}
+			if err == nil && config.PublicOrigin != test.origin {
+				t.Fatal("origin changed silently")
+			}
+		})
+	}
+}

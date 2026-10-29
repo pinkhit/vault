@@ -23,10 +23,11 @@ var ErrMultipart = errors.New("send exactly one file using multipart field 'file
 var checksumPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type API struct {
-	Documents *documents.Service
-	Log       *slog.Logger
-	Auth      *auth.Service
-	Storage   *analytics.Service
+	Documents    *documents.Service
+	Log          *slog.Logger
+	Auth         *auth.Service
+	Storage      *analytics.Service
+	PublicOrigin string
 }
 
 func (a *API) Handler(staticDir string) http.Handler {
@@ -93,9 +94,13 @@ func (a *API) health(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusServiceUnavailable, "database unavailable")
 		return
 	}
+	mode := "local-development"
+	if a.PublicOrigin != "" {
+		mode = "private-https"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":           "ok",
-		"mode":             "local-development",
+		"mode":             mode,
 		"max_upload_bytes": a.Documents.MaxBytes,
 	})
 }

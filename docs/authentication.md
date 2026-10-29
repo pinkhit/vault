@@ -1,6 +1,6 @@
 # Accounts, sessions and document permissions
 
-Milestone 2 is localhost-only development. Use synthetic documents. No Tailscale, Ollama, remote deployment or production backup workflow is implemented.
+Milestone 2 introduced localhost-only development. [Milestone 5 Checkpoint 1](private-access.md) adds an optional, explicitly configured HTTPS origin; live private-network verification remains pending. Use synthetic documents. No Ollama or production backup workflow is implemented.
 
 ## First administrator and upgrades
 
@@ -32,7 +32,7 @@ Local HTTP development explicitly uses `FAMILYVAULT_COOKIE_SECURE=false`. Settin
 
 ## CSRF and brute-force protection
 
-Login requires JSON and an exact `Origin: http://<request-host>` header, including the port when present. This also applies to command-line clients. Authenticated mutations require `X-CSRF-Token` matching the current session. `GET /api/auth/session` supplies it to an already authenticated same-origin browser. Missing/foreign/null origins are rejected at login; foreign origins and cross-site Fetch Metadata are rejected globally. CORS is not enabled. Cookies alone never authorize a state-changing request.
+Login requires JSON and an exact Origin header: `http://<request-host>` in default localhost mode, or the configured `FAMILYVAULT_PUBLIC_ORIGIN` in HTTPS mode. This also applies to command-line clients. Authenticated mutations require `X-CSRF-Token` matching the current session. `GET /api/auth/session` supplies it to an already authenticated same-origin browser. Missing/foreign/null origins are rejected at login; foreign origins and cross-site Fetch Metadata are rejected globally. CORS is not enabled. Cookies alone never authorize a state-changing request.
 
 Five login attempts per normalized account and fifty per socket peer IP are allowed per fifteen-minute window. Limits persist in SQLite and ignore `X-Forwarded-For`. A successful login resets the account budget; the IP budget still limits repeated successful logins. Unknown accounts use a dummy Argon2id hash, and invalid/disabled/unknown credentials receive the same error. Two concurrent login hashes and eight overall requests bound resource consumption. The bounded limiter table fails closed at capacity. Failed logins can temporarily lock out a known account; this is a documented availability tradeoff, not a distributed abuse-defense system.
 

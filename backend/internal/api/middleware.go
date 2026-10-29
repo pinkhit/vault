@@ -3,13 +3,22 @@ package api
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"github.com/pinkhit/vault/backend/internal/audit"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/pinkhit/vault/backend/internal/audit"
 )
 
-// middleware applies the local-development boundary and request limits to every route.
+// requestOrigin uses explicit configuration, never forwarded scheme/host headers.
+func (a *API) requestOrigin(r *http.Request) string {
+	if a.PublicOrigin != "" {
+		return a.PublicOrigin
+	}
+	return "http://" + r.Host
+}
+
+// middleware applies the configured origin boundary and request limits to every route.
 func (a *API) middleware(next http.Handler) http.Handler {
 	slots := make(chan struct{}, 8)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,8 +56,16 @@ func (a *API) middleware(next http.Handler) http.Handler {
 			host = h
 		}
 		ip := net.ParseIP(host)
-		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			problem(w, http.StatusForbidden, "localhost access only")
+		loopback := host == "localhost" || (ip != nil && ip.IsLoopback())
+		allowedHost := loopback
+		if a.PublicOrigin != "" {
+			// The local Docker health probe remains available without opening the UI/API
+			// on an alternate origin. The reverse proxy must preserve the public Host.
+			healthProbe := loopback && r.URL.Path == "/api/health" && (r.Method == http.MethodGet || r.Method == http.MethodHead)
+			allowedHost = "https://"+r.Host == a.PublicOrigin || healthProbe
+		}
+		if !allowedHost {
+			problem(w, http.StatusForbidden, "host is not allowed")
 			return
 		}
 		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
@@ -56,7 +73,7 @@ func (a *API) middleware(next http.Handler) http.Handler {
 			return
 		}
 		if origin := r.Header.Get("Origin"); origin != "" {
-			if origin != "http://"+r.Host {
+			if origin != a.requestOrigin(r) {
 				problem(w, http.StatusForbidden, "origin is not allowed")
 				return
 			}

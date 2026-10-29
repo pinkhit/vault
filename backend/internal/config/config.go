@@ -3,9 +3,11 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,7 @@ type Config struct {
 	SessionTTL     time.Duration
 	SessionIdleTTL time.Duration
 	SecureCookies  bool
+	PublicOrigin   string
 }
 
 func Load() (Config, error) {
@@ -41,6 +44,24 @@ func Load() (Config, error) {
 	c.SecureCookies, err = strconv.ParseBool(value("FAMILYVAULT_COOKIE_SECURE", "false"))
 	if err != nil {
 		return c, fmt.Errorf("FAMILYVAULT_COOKIE_SECURE must be true or false")
+	}
+	c.PublicOrigin = os.Getenv("FAMILYVAULT_PUBLIC_ORIGIN")
+	if c.PublicOrigin != "" {
+		origin, err := url.Parse(c.PublicOrigin)
+		if err != nil || origin.Scheme != "https" || origin.Hostname() == "" ||
+			origin.User != nil || c.PublicOrigin != "https://"+origin.Host ||
+			strings.ContainsAny(origin.Host, "*%") || strings.HasSuffix(origin.Host, ":") {
+			return c, fmt.Errorf("FAMILYVAULT_PUBLIC_ORIGIN must be an exact HTTPS origin without credentials, path, query or fragment")
+		}
+		if port := origin.Port(); port != "" {
+			n, err := strconv.Atoi(port)
+			if err != nil || n < 1 || n > 65535 {
+				return c, fmt.Errorf("FAMILYVAULT_PUBLIC_ORIGIN port must be between 1 and 65535")
+			}
+		}
+		if !c.SecureCookies {
+			return c, fmt.Errorf("FAMILYVAULT_PUBLIC_ORIGIN requires FAMILYVAULT_COOKIE_SECURE=true")
+		}
 	}
 	host, port, err := net.SplitHostPort(c.Address)
 	if err != nil || port == "" {

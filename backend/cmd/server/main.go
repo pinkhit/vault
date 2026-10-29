@@ -75,7 +75,7 @@ func run(log *slog.Logger) error {
 	}
 	metrics := analytics.New(db, store.VolumeCapacity, os.Getenv("FAMILYVAULT_CONTAINER") == "1")
 	metrics.HostStorageFile = os.Getenv("FAMILYVAULT_HOST_STORAGE_FILE")
-	handler := (&api.API{Documents: service, Auth: authentication, Storage: metrics, Log: log}).Handler(c.StaticDir)
+	handler := (&api.API{Documents: service, Auth: authentication, Storage: metrics, Log: log, PublicOrigin: c.PublicOrigin}).Handler(c.StaticDir)
 	server := &http.Server{
 		Addr:              c.Address,
 		Handler:           handler,
@@ -101,7 +101,7 @@ func run(log *slog.Logger) error {
 	}()
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
-	log.Info("authenticated localhost server: synthetic documents only", "address", c.Address)
+	log.Info("authenticated server: synthetic documents only", "address", c.Address, "public_origin", c.PublicOrigin)
 	select {
 	case err = <-result:
 		if errors.Is(err, http.ErrServerClosed) {

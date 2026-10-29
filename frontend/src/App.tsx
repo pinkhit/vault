@@ -263,13 +263,18 @@ function DocumentBrowser({
           </button>
           <span className="local-badge">
             <span aria-hidden="true" />
-            Local development
+            {health?.mode === 'private-https'
+              ? 'Private HTTPS'
+              : 'Local development'}
           </span>
         </div>
       </header>
       <div className="warning">
-        <strong>Synthetic documents only.</strong> Keep this development app on
-        localhost. Production backups and deployment are not ready.
+        <strong>Synthetic documents only.</strong>{' '}
+        {health?.mode === 'private-https'
+          ? 'Private demonstration access.'
+          : 'Keep this development app on localhost.'}{' '}
+        Production backups and deployment are not ready.
       </div>
       <main>
         <div className="page-heading">
