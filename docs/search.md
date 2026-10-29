@@ -1,0 +1,40 @@
+# Permission-aware search — Checkpoint 4
+
+`GET /api/search?q=printer&limit=20&offset=0` requires a live session. It searches filenames, metadata and published passages using SQLite FTS5. This checkpoint adds the backend API only; the search interface remains Checkpoint 5. No new Go dependency, external search service, AI or remote access was introduced.
+
+## Query and response contract
+
+- `q`: 1–512 UTF-8 bytes, at most eight words or double-quoted phrases. Words/phrases are combined with AND. Example: `"supplier invoice" INV-2026-001`.
+- Each clause is passed as a quoted FTS literal in a bound SQL parameter. Boolean keywords are literal words, not operators. Unbalanced/glued quotes, control characters and bare FTS operators/column selectors are rejected. Quoted punctuation is literal input to the tokenizer; escaping embedded double quotes is not supported.
+- `limit`: defaults to 20, range 1–50. `offset`: defaults to 0, range 0–10,000. Duplicate or unknown parameters are rejected. Invalid queries/parameters return 400, missing/expired sessions 401, detected context interruption 503, and internal failures a generic 500 without logging the query.
+- The service applies a two-second query context. Token search is case-insensitive with Unicode61 diacritic handling. Hyphens/underscores remain token characters, so `INV-2026-001` matches a whole identifier rather than a prefix or Boolean expression. This also means parts of a hyphenated filename are not independent name tokens.
+
+The response is `{ "results": [...], "has_more": false }`. Each hit contains the existing `document` metadata object, a plain-text `snippet`, `match` (`filename`, `metadata` or `content`), and page/section references when applicable. PDF pages are one-based; TXT omits page zero but retains its section. Snippets use up to 24 tokens and are capped at 768 UTF-8 bytes. They are untrusted text, never server-generated HTML; the future UI must render them as text nodes.
+
+Metadata search covers document ID, filename, media type, size, checksum and creation timestamp/date. Names/metadata are available even when extraction is pending or unsupported. Content is available only from a ready job whose checksum and passage checksum match the current document. All query clauses must match the same metadata entry or passage; matches are not combined across separate pages/passages.
+
+## Authorization, ranking and pagination
+
+Both SQL search branches reuse the Milestone 2 enabled-user AND (administrator OR owner OR explicit grant) predicate. Authorization and source/readiness checks occur before rows enter the materialized hit set, document deduplication or pagination. Actor role flags from request/session snapshots do not override current database authority. Permission revocation affects subsequent searches without reindexing; already-read responses may finish under the existing request policy.
+
+One best hit is returned per visible document. Filename matches rank above metadata, then content; capped row-local match frequency breaks relevance ties. Page/section select the best passage, and creation time/document ID provide deterministic final ordering. Raw ranks and global result totals are not exposed. `has_more` uses one extra authorized, deduplicated document; hidden rows cannot create empty pages or inflate it.
+
+Global BM25/IDF statistics are deliberately unused because restricted documents could otherwise affect visible ranking. The ranking inputs here are local to matching visible rows. Tests compare the complete result payload before/after adding restricted, higher-ranked matches. This is not a claim of timing-oblivious execution or a production performance benchmark. Offset pagination reflects current data/permissions rather than a frozen multi-request snapshot.
+
+## Index maintenance and upgrades
+
+Migration 006 backfills metadata and existing passages without changing originals, job status/attempt counts or access rights. Metadata FTS rows join by document ID. Passages gain an explicit integer primary key while retaining document/page/section/content/checksum values; external-content FTS uses that stable key. This avoids relying on implicit rowids, which SQLite [may change during VACUUM](https://www.sqlite.org/lang_vacuum.html).
+
+SQL triggers maintain filename/metadata indexes on document insert/update/delete and passage indexes on passage insert/update/delete. They share the existing upload, rename, source invalidation and worker publication transactions: rollback also rolls back search changes. Passage text is reused through FTS external content instead of another full text copy. Current authorization/source predicates remain mandatory even when an index entry exists.
+
+Rebuild/restart with the existing named volume to apply the migration; do not reset data or repeat account bootstrap. The regular developer volume was not modified during verification. Index corruption/repair operations, downgrade, production benchmarking and backup restoration have not been validated. Substring/prefix search, stemming, cross-passage conjunctions, OCR and semantic retrieval are outside this checkpoint.
+
+For an interview, explain the difference between an inverted index and authorization, why pagination must follow permission filtering, how transactional triggers prevent index drift, why stable keys matter for external content, and why ranking based on hidden corpus statistics can leak information. The [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html) describes the tokenizer, literal syntax, snippets and external-content mechanisms used here.
+
+## Checks actually executed
+
+- Go 1.26.10/Linux formatting, `go vet ./...` and the complete race suite passed; combined statement coverage was **78.9%**. Tests cover metadata/content/identifier matching, page references, document deduplication, ranking, pagination, current grants/revocation, disabled accounts and forged cached roles. Adding higher-ranked restricted documents leaves another user's complete search payload unchanged.
+- Migration/backfill, rename/audit rollback, unfinished/current-source filtering, replacement/deletion, FTS integrity after `VACUUM`, malformed queries, injection attempts, cancellation and query-log redaction tests passed. The bounded literal-parser fuzz run passed with **58,513 executions** observed in its five-second requested duration.
+- All **10 frontend tests**, formatting, TypeScript/production build and **1 desktop/mobile browser regression test** passed. The browser test exercises existing file operations, not a new search UI. Linux amd64/arm64 server and macOS amd64 server/CLI builds passed; ARM64 hardware was not tested.
+- The isolated Compose test verified authenticated filename, invoice-identifier and extracted-content search after restart, original-byte checksums, persisted sessions and logout rejection. Only its own synthetic project/volume was removed; the regular developer accounts/data were untouched.
+- `git diff --check` and Python syntax checks passed. Existing CI includes the new Go tests/fuzz seeds and extended Compose test on pushes/PRs. No hosted CI run, production benchmark, downgrade/restore drill or statistical timing evaluation was performed.

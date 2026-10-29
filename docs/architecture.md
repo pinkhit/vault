@@ -1,6 +1,6 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events and durable background TXT/PDF indexing. Search, previews, analytics, AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF indexing and a permission-aware FTS5 search API. Search UI, previews, analytics, AI and remote access remain planned.
 
 ```mermaid
 flowchart LR
@@ -23,7 +23,7 @@ During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `
 - `internal/auth`: Argon2id passwords, login throttling, persistent sessions, expiry/revocation and account changes.
 - `internal/authorization`: explicit document read/write/manage checks; no folder inheritance yet.
 - `internal/audit`: structured security/document events sharing mutation transactions.
-- `internal/documents`: filenames, metadata queries, checksum comparison, upload coordination.
+- `internal/documents`: filenames, metadata queries, checksum comparison, upload coordination and permission-filtered search. See the [search contract](search.md).
 - `internal/indexing`: persistent jobs, one bounded worker, retries/recovery and transactional passage publication. See [indexing lifecycle](indexing.md).
 - `internal/extraction`: bounded TXT passages and Linux Poppler subprocesses. See [extraction limits](extraction.md).
 - `internal/storage`: confined file operations, staging, syncing, verification and startup cleanup.

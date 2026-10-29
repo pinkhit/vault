@@ -70,6 +70,7 @@ All authenticated writes require the session cookie and `X-CSRF-Token`. JSON end
 | `GET /api/admin/audit` | Most recent 100 security/document events |
 | `PATCH /api/documents/{id}` | `{ "name": "fictional-invoice.txt" }`; requires write |
 | `GET /api/documents/{id}/indexing` | Current indexing status/retry metadata; requires read; excludes extracted text and internal attempt tokens |
+| `GET /api/search?q=printer&limit=20&offset=0` | Search authorized names/metadata and ready passages; current read permission filters results/snippets before pagination; see [query limits](search.md) |
 | `GET /api/documents/{id}/permissions` | Explicit grants; requires manage |
 | `PUT /api/documents/{id}/permissions/{userID}` | `{ "level": "read" }`, `write` or `manage` |
 | `DELETE /api/documents/{id}/permissions/{userID}` | Revokes explicit grant |

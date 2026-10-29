@@ -20,7 +20,7 @@ func TestMigrationReopenAndPragmas(t *testing.T) {
 		if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil {
 			t.Fatal(err)
 		}
-		if versions != 5 {
+		if versions != 6 {
 			t.Fatalf("migrations: %d", versions)
 		}
 		if err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
@@ -173,5 +173,51 @@ func TestPassageMigrationQueuesLegacyDocumentsAndPreservesFailures(t *testing.T)
 	}
 	if preserved != 1 || backfilled != 2 {
 		t.Fatal("migration lost terminal failures or left unindexed legacy documents")
+	}
+}
+
+func TestSearchMigrationPreservesAndIndexesExistingPassages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.sqlite")
+	legacy := legacyDatabase(t, path, "001_documents.sql", "002_authentication.sql", "003_audit_details.sql", "004_document_indexing.sql", "005_document_passages.sql")
+	id, checksum := strings.Repeat("a", 32), strings.Repeat("b", 64)
+	if _, err := legacy.Exec(`INSERT INTO documents(id,name,size,media_type,sha256,created_at)
+        VALUES (?, 'legacyfilename.txt', 42, 'text/plain', ?, '2026-01-01T00:00:00Z')`, id, checksum); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO document_index_jobs(document_id,source_sha256,status,attempts)
+        VALUES (?, ?, 'ready', 2)`, id, checksum); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO document_passages(document_id,source_sha256,page,section,text)
+        VALUES (?, ?, 4, 2, 'legacycontent INV-2026-001')`, id, checksum); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var document, source, text, status string
+	var page, section, attempts int
+	err = db.QueryRow(`SELECT p.document_id,p.source_sha256,p.text,p.page,p.section,j.status,j.attempts
+        FROM document_passages p JOIN document_index_jobs j ON j.document_id=p.document_id`).
+		Scan(&document, &source, &text, &page, &section, &status, &attempts)
+	if err != nil || document != id || source != checksum || text != "legacycontent INV-2026-001" || page != 4 || section != 2 || status != "ready" || attempts != 2 {
+		t.Fatal("search migration changed existing passage/job metadata", err)
+	}
+	for _, query := range []string{
+		"SELECT count(*) FROM document_fts WHERE document_fts MATCH 'legacyfilename'",
+		"SELECT count(*) FROM passage_fts WHERE passage_fts MATCH 'legacycontent'",
+	} {
+		var count int
+		if err := db.QueryRow(query).Scan(&count); err != nil || count != 1 {
+			t.Fatal("migration did not backfill an FTS index", count, err)
+		}
+	}
+	if _, err := db.Exec("INSERT INTO passage_fts(passage_fts,rank) VALUES ('integrity-check',1)"); err != nil {
+		t.Fatal(err)
 	}
 }

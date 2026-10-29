@@ -1,6 +1,6 @@
 # Document indexing
 
-Implemented through Checkpoint 3: persistent jobs, a single background worker, atomic upload enqueueing, stored passages and a read-authorized status API using the [bounded TXT/PDF extractor](extraction.md). FTS5, search, previews and analytics remain later checkpoints. Development remains localhost-only.
+Implemented through Checkpoint 4: persistent jobs, a single background worker, atomic upload enqueueing, stored passages, a read-authorized status API and [permission-aware FTS5 search](search.md), using the [bounded TXT/PDF extractor](extraction.md). Search UI, previews and analytics remain later checkpoints. Development remains localhost-only.
 
 ## State and transactions
 
@@ -30,7 +30,7 @@ At startup, `Recover` runs under the storage lock before the listener/worker: it
 
 There is no search/preview UI or manual retry API yet. Terminal failures do not automatically restart. The queue stores current state, not attempt history. PDF extraction retains the Linux/Docker requirement; DOCX/OCR remain deferred. No performance benchmark, power-loss guarantee or production readiness is claimed. Rebuild/restart with the existing volume to apply migration 005; do not repeat account bootstrap or reset data.
 
-The important concepts are additive transactional migrations, atomic queue claims, idempotency, attempt tokens that reject stale writes, and durable state versus process memory. Recovery permits work to run again after interruption; it does not promise exactly-once extraction. Source bytes remain independent of derived indexing state. Search authorization must still be enforced against current Milestone 2 permissions when the search API is implemented.
+The important concepts are additive transactional migrations, atomic queue claims, idempotency, attempt tokens that reject stale writes, and durable state versus process memory. Recovery permits work to run again after interruption; it does not promise exactly-once extraction. Source bytes remain independent of derived indexing state. Search applies current Milestone 2 permissions and source/readiness checks in SQL; FTS passage triggers share the publication transaction.
 
 ## Checkpoint 1 verification
 

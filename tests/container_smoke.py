@@ -60,6 +60,7 @@ def main():
         status, homepage, _ = request("GET", "/")
         assert status == 200 and b"FamilyVault" in homepage
         assert request("GET", "/api/documents")[0] == 401
+        assert request("GET", "/api/search?q=Printer")[0] == 401
         credentials = json.dumps({"username": "smoke-admin", "password": password}).encode()
         status, body, headers = request("POST", "/api/auth/login", credentials, "application/json")
         assert status == 200, "Login failed"
@@ -98,6 +99,16 @@ def main():
             assert progress["status"] in ("pending", "processing"), "Indexing failed"
             assert time.monotonic() < deadline, "Indexing did not finish"
             time.sleep(0.1)
+        for query in ("Printer", "DEMO-2026-001", "fictional-invoice"):
+            status, body, _ = request("GET", "/api/search?q=" + query)
+            assert status == 200, "Search failed after restart"
+            results = json.loads(body)
+            assert len(results["results"]) == 1 and not results["has_more"]
+            hit = results["results"][0]
+            assert hit["document"]["id"] == document["id"]
+            if query == "Printer":
+                assert hit["match"] == "content" and hit["section"] >= 1
+                assert "Printer" in hit["snippet"]
         status, downloaded, headers = request("GET", "/api/documents/" + document["id"] + "/download")
         assert status == 200 and downloaded == fixture, "Original bytes changed after restart"
         assert headers["X-Checksum-SHA256"] == checksum
@@ -106,7 +117,8 @@ def main():
         assert request("POST", "/api/auth/logout")[0] == 204
         assert request("GET", "/api/documents")[0] == 401
         assert request("GET", indexing_path)[0] == 401
-        print("PASS: authenticated upload/download, background indexing, restart persistence and logout revocation")
+        assert request("GET", "/api/search?q=Printer")[0] == 401
+        print("PASS: authenticated files, background indexing/search, restart persistence and logout revocation")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)
