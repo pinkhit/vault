@@ -29,12 +29,14 @@ export default function DocumentSearch({
   onUnauthorized,
   onClear,
   onPreview,
+  renderDelete,
   children,
 }: {
   revision: number;
   onUnauthorized: () => void;
   onClear: () => void;
   onPreview: (document: DocumentRecord, page?: number) => void;
+  renderDelete?: (document: DocumentRecord) => ReactNode;
   children: ReactNode;
 }) {
   const [draft, setDraft] = useState('');
@@ -222,6 +224,7 @@ export default function DocumentSearch({
                   >
                     Preview{hit.page ? ` page ${hit.page}` : ''}
                   </button>
+                  {renderDelete?.(hit.document)}
                 </li>
               ))}
             </ul>

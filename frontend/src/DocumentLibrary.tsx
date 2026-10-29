@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { DocumentPage, DocumentRecord } from './api';
 import { formatBytes } from './format';
 import IndexingBadge from './IndexingBadge';
@@ -10,6 +11,7 @@ interface DocumentLibraryProps {
   onRefresh: () => void;
   onPageChange: (offset: number) => void;
   onPreview: (document: DocumentRecord) => void;
+  renderDelete?: (document: DocumentRecord) => ReactNode;
 }
 
 export default function DocumentLibrary({
@@ -20,6 +22,7 @@ export default function DocumentLibrary({
   onRefresh,
   onPageChange,
   onPreview,
+  renderDelete,
 }: DocumentLibraryProps) {
   function renderDocuments() {
     if (error) {
@@ -106,6 +109,7 @@ export default function DocumentLibrary({
                   >
                     Download <span aria-hidden="true">↓</span>
                   </a>
+                  {renderDelete?.(document)}
                 </td>
               </tr>
             ))}

@@ -236,6 +236,10 @@ input::file-selector-button {
 .secondary:hover:enabled {
   background: #f1f5ed;
 }
+.delete-button {
+  margin-inline-start: 12px;
+  color: #b42318;
+}
 .section-heading {
   padding: 22px 28px;
   display: flex;

@@ -160,6 +160,17 @@ func (s *Store) DiscardStage(id string) error {
 	return s.remove("staging/" + id)
 }
 
+// RemoveObject unlinks only the generated key, never a symlink's target.
+func (s *Store) RemoveObject(id string) error {
+	if !ValidID(id) {
+		return fmt.Errorf("invalid storage key")
+	}
+	if err := s.remove("objects/" + id); err != nil {
+		return err
+	}
+	return s.syncDir("objects")
+}
+
 func (s *Store) OpenVerified(id string, size int64, checksum string) (*os.File, error) {
 	return s.OpenVerifiedContext(context.Background(), id, size, checksum)
 }

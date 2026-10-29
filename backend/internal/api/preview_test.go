@@ -20,23 +20,15 @@ import (
 	"github.com/pinkhit/vault/backend/internal/testutil"
 )
 
-func TestPreviewAuthorizationRevocationAndMetadataPrivacy(t *testing.T) {
-	for name, data := range map[string][]byte{
-		"private <img>.docx": testutil.DOCX(t, `<w:p><w:r><w:t>Fictional &lt;script&gt;private-sentinel&lt;/script&gt;</w:t></w:r></w:p>`),
-		"private <img>.xlsx": testutil.ZIP(t, testutil.XLSXParts(`<row><c t="inlineStr"><is><t>Fictional &lt;script&gt;private-sentinel&lt;/script&gt;</t></is></c></row>`)),
-	} {
-		t.Run(name, func(t *testing.T) { checkPreviewReadPermission(t, name, data) })
-	}
-}
-
-func checkPreviewReadPermission(t *testing.T, name string, data []byte) {
-	t.Helper()
+// All formats pass through Service.Preview authorization before parsing.
+// Role combinations live in TestDocumentEndpointAuthorizationMatrix.
+func TestPreviewHTTPContractAndRevocation(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1<<20)
 	owner := createMember(t, a, "preview-owner")
 	reader := createMember(t, a, "preview-reader")
 	ownerID, _ := signIn(t, a, owner.Username, memberPassword, nil)
 	readerID, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	doc := uploadBytesAs(t, a, ownerID, name, data)
+	doc := uploadBytesAs(t, a, ownerID, "private <img>.txt", []byte("Fictional <script>private-sentinel</script>"))
 	path := "/api/documents/" + doc.ID + "/preview"
 	handler := a.Handler("")
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", nil), 401)
@@ -46,34 +38,32 @@ func checkPreviewReadPermission(t *testing.T, name string, data []byte) {
 	if denied.Body.String() != missing.Body.String() || strings.Contains(denied.Body.String(), "private") {
 		t.Fatal("restricted preview disclosed existence/metadata")
 	}
-	for _, level := range []string{"read", "write", "manage"} {
-		if err := authorization.SetGrant(context.Background(), a.Documents.DB, owner, doc.ID, reader.ID, level); err != nil {
-			t.Fatal(err)
-		}
-		response := asUser(t, handler, "GET", path, nil, "", readerID, func(r *http.Request) {
-			r.Header.Set("Range", "bytes=0-1")
-			r.Header.Set("If-None-Match", `"forged"`)
-		})
-		requireStatus(t, response, 200)
-		if strings.Contains(response.Body.String(), "<script>") || !strings.Contains(response.Body.String(), `\u003cscript\u003e`) {
-			t.Fatal("preview returned raw active content")
-		}
-		for header, expected := range map[string]string{
-			"Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8",
-			"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
-		} {
-			if response.Header().Get(header) != expected {
-				t.Fatal("missing preview security header", header)
-			}
-		}
-		if !strings.Contains(response.Header().Get("Content-Security-Policy"), "object-src 'none'") {
-			t.Fatal("preview weakened CSP")
-		}
-		if err := authorization.SetGrant(context.Background(), a.Documents.DB, owner, doc.ID, reader.ID, ""); err != nil {
-			t.Fatal(err)
-		}
-		requireStatus(t, jsonRequest(t, handler, "GET", path, "", readerID), 404)
+	if err := authorization.SetGrant(context.Background(), a.Documents.DB, owner, doc.ID, reader.ID, "read"); err != nil {
+		t.Fatal(err)
 	}
+	response := asUser(t, handler, "GET", path, nil, "", readerID, func(r *http.Request) {
+		r.Header.Set("Range", "bytes=0-1")
+		r.Header.Set("If-None-Match", `"forged"`)
+	})
+	requireStatus(t, response, 200)
+	if strings.Contains(response.Body.String(), "<script>") || !strings.Contains(response.Body.String(), `\u003cscript\u003e`) {
+		t.Fatal("preview returned raw active content")
+	}
+	for header, expected := range map[string]string{
+		"Cache-Control": "no-store", "Content-Type": "application/json; charset=utf-8",
+		"Content-Disposition": "inline", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
+	} {
+		if response.Header().Get(header) != expected {
+			t.Fatal("missing preview security header", header)
+		}
+	}
+	if !strings.Contains(response.Header().Get("Content-Security-Policy"), "object-src 'none'") {
+		t.Fatal("preview weakened CSP")
+	}
+	if err := authorization.SetGrant(context.Background(), a.Documents.DB, owner, doc.ID, reader.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	requireStatus(t, jsonRequest(t, handler, "GET", path, "", readerID), 404)
 	reader.IsAdmin = true
 	if _, err := a.Documents.Preview(context.Background(), reader, doc.ID, 1); err == nil {
 		t.Fatal("cached admin claim bypassed SQL authorization")

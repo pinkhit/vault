@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/authorization"
@@ -57,6 +58,9 @@ func TestDocumentEndpointAuthorizationMatrix(t *testing.T) {
 	for _, actor := range subjects {
 		t.Run(actor.name, func(t *testing.T) {
 			path := "/api/documents/" + document.ID
+			if actor.name != "owner" && actor.name != "administrator" {
+				requireStatus(t, jsonRequest(t, handler, "DELETE", path, "", actor.identity), actor.denied)
+			}
 			for _, method := range []string{"GET", "HEAD"} {
 				response := jsonRequest(t, handler, method, path+"/preview", "", actor.identity)
 				expected := actor.denied
@@ -125,6 +129,9 @@ func TestDocumentEndpointAuthorizationMatrix(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !actor.user.IsAdmin {
+				if !actor.read && (strings.Contains(response.Body.String(), document.ID) || strings.Contains(response.Body.String(), document.Name)) {
+					t.Fatal("restricted document metadata leaked from listing")
+				}
 				if strings.Contains(response.Body.String(), other.ID) || strings.Contains(response.Body.String(), other.Name) {
 					t.Fatal("unrelated metadata crossed the SQL filter")
 				}
@@ -143,17 +150,20 @@ func TestDocumentEndpointAuthorizationMatrix(t *testing.T) {
 	if _, err := a.Documents.Get(context.Background(), forged, other.ID); err == nil {
 		t.Fatal("cached admin flag bypassed SQL authorization")
 	}
+	if err := a.Documents.Delete(context.Background(), forged, other.ID); err == nil {
+		t.Fatal("cached admin flag bypassed deletion authorization")
+	}
 }
 
-func TestEveryAuthenticatedMutationRejectsMissingCSRF(t *testing.T) {
+func TestEveryAuthenticatedMutationRejectsInvalidCSRF(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1024)
 	target := createMember(t, a, "csrf-target")
 	document := uploadAs(t, a, fixtureIdentity(), "csrf-private.txt")
-	actor := fixtureIdentity()
-	actor.csrf = ""
-	for _, test := range []struct{ method, path, body string }{
+	second, _ := signIn(t, a, fixtureActor.Username, "fictional-admin-password", nil)
+	mutations := []struct{ method, path, body string }{
 		{"POST", "/api/documents", ""},
 		{"PATCH", "/api/documents/" + document.ID, `{"name":"renamed.txt"}`},
+		{"DELETE", "/api/documents/" + document.ID, ""},
 		{"PUT", "/api/documents/" + document.ID + "/permissions/" + target.ID, `{"level":"manage"}`},
 		{"DELETE", "/api/documents/" + document.ID + "/permissions/" + target.ID, ""},
 		{"POST", "/api/admin/users", `{"username":"csrf-admin","password":"fictional-password","is_admin":true}`},
@@ -161,9 +171,16 @@ func TestEveryAuthenticatedMutationRejectsMissingCSRF(t *testing.T) {
 		{"POST", "/api/auth/logout", ""},
 		{"POST", "/api/auth/revoke-sessions", ""},
 		{"POST", "/api/auth/password", `{"current_password":"fictional-admin-password","new_password":"fictional-new-password"}`},
-	} {
-		t.Run(test.method+test.path, func(t *testing.T) {
-			requireStatus(t, jsonRequest(t, a.Handler(""), test.method, test.path, test.body, actor), 403)
+	}
+	for _, token := range []struct{ name, value string }{{"missing", ""}, {"forged", "forged"}, {"other-session", second.csrf}} {
+		t.Run(token.name, func(t *testing.T) {
+			actor := fixtureIdentity()
+			actor.csrf = token.value
+			for _, mutation := range mutations {
+				t.Run(mutation.method+mutation.path, func(t *testing.T) {
+					requireStatus(t, jsonRequest(t, a.Handler(""), mutation.method, mutation.path, mutation.body, actor), 403)
+				})
+			}
 		})
 	}
 	var admin bool
@@ -178,6 +195,8 @@ func TestEveryAuthenticatedMutationRejectsMissingCSRF(t *testing.T) {
 
 func TestGenericAuthenticationFailureAndCanonicalThrottle(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1024)
+	now := time.Now().UTC()
+	a.Auth.Now = func() time.Time { return now }
 	createMember(t, a, "known-user")
 	disabled := createMember(t, a, "disabled-user")
 	enabled := false
@@ -191,7 +210,7 @@ func TestGenericAuthenticationFailureAndCanonicalThrottle(t *testing.T) {
 		if baseline == "" {
 			baseline = response.Body.String()
 		}
-		if response.Body.String() != baseline || len(response.Result().Cookies()) != 0 {
+		if response.Body.String() != baseline || !strings.Contains(response.Body.String(), "invalid username or password") || len(response.Result().Cookies()) != 0 {
 			t.Fatal("failure response disclosed account state")
 		}
 	}
@@ -203,5 +222,16 @@ func TestGenericAuthenticationFailureAndCanonicalThrottle(t *testing.T) {
 	for _, username := range []string{"KNOWN-USER", " known-user ", "Known-User", "known-user"} {
 		requireStatus(t, jsonRequest(t, a.Handler(""), "POST", "/api/auth/login", fmt.Sprintf(`{"username":%q,"password":"wrong"}`, username), nil), 401)
 	}
-	requireStatus(t, jsonRequest(t, a.Handler(""), "POST", "/api/auth/login", `{"username":"known-user","password":"fictional-member-password"}`, nil), 429)
+	for i := 0; i < 4; i++ {
+		requireStatus(t, jsonRequest(t, a.Handler(""), "POST", "/api/auth/login", `{"username":"unknown-user","password":"wrong"}`, nil), 401)
+	}
+	for _, name := range []string{"known-user", "unknown-user"} {
+		response := jsonRequest(t, a.Handler(""), "POST", "/api/auth/login", fmt.Sprintf(`{"username":%q,"password":"fictional-member-password"}`, name), nil)
+		requireStatus(t, response, 429)
+		if response.Header().Get("Retry-After") == "" {
+			t.Fatal("missing retry hint")
+		}
+	}
+	now = now.Add(16 * time.Minute)
+	signIn(t, a, "known-user", memberPassword, nil)
 }

@@ -38,18 +38,22 @@ Five login attempts per normalized account and fifty per socket peer IP are allo
 
 ## Permission rules
 
-| Authority | Read/list/download | Rename | Grant/revoke permissions | Manage accounts/audit |
-| --- | --- | --- | --- | --- |
-| Document owner | Yes | Yes | Yes | No |
-| Explicit `read` | Yes | No | No | No |
-| Explicit `write` | Yes | Yes | No | No |
-| Explicit `manage` | Yes | Yes | Yes | No |
-| Enabled administrator | All documents | All documents | All documents | Yes |
-| Other/disabled/anonymous | No | No | No | No |
+| Authority | Read/list/download | Rename | Grant/revoke permissions | Delete | Manage accounts/audit |
+| --- | --- | --- | --- | --- | --- |
+| Document owner | Yes | Yes | Yes | Yes | No |
+| Explicit `read` | Yes | No | No | No | No |
+| Explicit `write` | Yes | Yes | No | No | No |
+| Explicit `manage` | Yes | Yes | Yes | No | No |
+| Enabled administrator | All documents | All documents | All documents | All documents | Yes |
+| Other/disabled/anonymous | No | No | No | No | No |
 
 Grants are additive, per document, with no deny overrides or inheritance. Owners cannot be changed through the grant endpoint, and revoking a grant does not remove ownership or administrator access. A delegated manager may grant `manage` to others. Account disablement preserves document ownership and grants while blocking their use. Folders do not exist yet, so folder inheritance is deliberately not invented here.
 
 Filtering happens in SQL before listing pagination and before opening a file for download. ID secrecy and frontend controls are not authorization. Missing and unauthorized document IDs both return 404 without names, checksums or attachment headers. Permission checks and mutations share a transaction; no permission cache needs invalidation.
+
+`DELETE /api/documents/{id}` requires the current session and CSRF token. Only the enabled uploader/owner or an enabled administrator may delete; even a `manage` grant is insufficient. The library and search results show a confirmation before calling it. Missing, already deleted and unauthorized IDs return the same 404. Deletion and `document.delete` audit recording commit together; an audit/database failure leaves the original intact. Existing foreign keys and FTS triggers remove grants, indexing jobs, passages and search entries. Late indexing completion cannot recreate a deleted job.
+
+The original file is unlinked only after a successful commit. If cleanup fails or the process crashes between commit and unlink, the document is already inaccessible and startup reconciliation retries removing the orphan. A 204 confirms logical deletion, not secure erasure: SQLite free pages/WAL, snapshots, backups and already-open downloads can retain bytes. There is no trash or undo.
 
 Administrator account/audit listings also recheck the actor's current enabled administrator status in the same transaction as the private query. They do not rely solely on the earlier session middleware snapshot. Revocation cannot retract data already read or sent by an in-flight request.
 

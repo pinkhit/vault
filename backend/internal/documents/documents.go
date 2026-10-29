@@ -230,6 +230,39 @@ func (s *Service) Rename(ctx context.Context, actor auth.User, id, name string) 
 	return tx.Commit()
 }
 
+func (s *Service) Delete(ctx context.Context, actor auth.User, id string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// Grants never confer deletion. Read current account authority in this write.
+	result, err := tx.ExecContext(ctx, `DELETE FROM documents WHERE id = ? AND EXISTS (
+        SELECT 1 FROM users u WHERE u.id = ? AND u.enabled = 1
+        AND (u.is_admin = 1 OR documents.owner_id = u.id)
+    )`, id, actor.ID)
+	if err != nil {
+		return err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if deleted != 1 {
+		return sql.ErrNoRows
+	}
+	if err = audit.Record(ctx, tx, actor.ID, "document.delete", id, "allowed"); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err // Never unlink on an ambiguous commit; startup reconciles orphans.
+	}
+	if err = s.Store.RemoveObject(id); err != nil {
+		s.Log.Error("deleted document cleanup failed; startup will retry", "document_id", id, "error", err)
+	}
+	return nil
+}
+
 func (s *Service) Recover(ctx context.Context) error {
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT id, name, size, media_type, sha256, created_at, owner_id, ''

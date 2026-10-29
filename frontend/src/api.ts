@@ -171,6 +171,11 @@ export const getHealth = (signal?: AbortSignal) =>
 export const listDocuments = (offset: number, signal?: AbortSignal) =>
   request<DocumentPage>(`/api/documents?limit=50&offset=${offset}`, { signal });
 
+export const deleteDocument = (id: string) =>
+  request<void>(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
 export const searchDocuments = (
   query: string,
   offset: number,

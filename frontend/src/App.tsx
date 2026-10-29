@@ -12,6 +12,7 @@ import {
   type DocumentRecord,
 } from './api';
 import DocumentLibrary from './DocumentLibrary';
+import DeleteDocumentButton from './DeleteDocumentButton';
 import DocumentSearch from './DocumentSearch';
 import DocumentPreview from './DocumentPreview';
 import StorageOverview from './StorageOverview';
@@ -207,6 +208,24 @@ function DocumentBrowser({
     }
   }
 
+  function renderDelete(document: DocumentRecord) {
+    return (
+      <DeleteDocumentButton
+        document={document}
+        user={session.user}
+        onUnauthorized={onSignOut}
+        onDeleted={() => {
+          setNotice(`${document.name} deleted.`);
+          setPreview((current) =>
+            current?.document.id === document.id ? null : current,
+          );
+          setOffset(0);
+          refresh();
+        }}
+      />
+    );
+  }
+
   return (
     <>
       <header className="topbar">
@@ -335,6 +354,7 @@ function DocumentBrowser({
           onUnauthorized={onSignOut}
           onClear={refresh}
           onPreview={(document, page = 1) => setPreview({ document, page })}
+          renderDelete={renderDelete}
         >
           <DocumentLibrary
             page={page}
@@ -344,6 +364,7 @@ function DocumentBrowser({
             onRefresh={refresh}
             onPageChange={setOffset}
             onPreview={(document) => setPreview({ document, page: 1 })}
+            renderDelete={renderDelete}
           />
         </DocumentSearch>
         {preview && (

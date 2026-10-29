@@ -90,57 +90,14 @@ A single grouped SQLite query scans metadata for the intended thousands-of-docum
 
 Missing/expired/revoked sessions return 401; non-admins 403; parameters 400; database/audit errors the existing generic 500. Capacity-provider errors become `capacity: null` without exposing diagnostics or paths. An audit failure releases no totals. Unsupported capacity platforms do not affect document operations. The dashboard displays server-provided warnings and never filters private document records in JavaScript.
 
-## Verification
+## Verification and limits
 
-Recorded October 29, 2026 on macOS Intel, with Go 1.26.10 checks in the Linux Docker development image and installed Chrome against an isolated Compose application. Fixtures contain synthetic data only.
+Current automated results and the coverage map are maintained in the [Milestone 3 review](hardening-milestone-3.md). Storage tests cover administrator authority and demotion during sampling, totals/type grouping, empty data, private metadata exclusion, audit failure, missing/stale/invalid host samples, capacity/cache failure and recovery, concurrent refresh and decimal display units. The browser flow exercises desktop/mobile storage layout, uploads/refreshed totals, non-admin rejection, failure states and session revocation. Earlier checkpoint counts and debugging transcripts remain in Git history.
 
-| Check | Actual result |
-| --- | --- |
-| Go formatting/static analysis | `gofmt` and `go vet ./...` passed |
-| Complete Go race suite | Passed, **80.2% combined statement coverage** |
-| Permission/integration tests | Passed: anonymous/expired/revoked/disabled accounts, read/write/manage grants denied, forged cached admin role rejected, demotion during sampling, query/path rejection, no document metadata/host-path leakage, audit failure withholding metrics, empty data and all-owner totals |
-| Provider/cache tests | Passed: reserved-space arithmetic, low-space thresholds, invalid/overflowing figures, directory symlink rejection, successful/failing cache expiry, recovery, clock rollback and concurrent refresh sampling once |
-| Frontend | **31 tests passed**, strict TypeScript/production build passed, Prettier passed |
-| Browser | **4 Chrome flows passed**: original files, secure search, safe previews and administrator storage. Storage assertions cover upload/refreshed counts and bytes, desktop/mobile layout, synthetic capacity-unavailable/HTTP-error recovery, real non-admin manage-grant rejection and session revocation. Desktop/mobile screenshots inspected |
-| Docker persistence | Passed: real container capacity/source/accounting and logical totals after restart, plus indexing/search, TXT/PDF previews, exact original bytes and logout rejection |
-| Cross-builds | Server builds passed for Linux amd64/arm64 and macOS amd64/arm64; ARM hardware not tested |
-| Native macOS provider | **3 capacity tests passed on this Mac** using a cross-compiled test binary: block accounting/warnings, actual native filesystem sampling and symlink rejection. This is not host monitoring for a Dockerized application |
-| Review checks | `git diff --check` and Python syntax passed |
-| Hosted CI | Not run here; existing workflow includes the new backend/frontend/browser and Compose tests |
-
-Initial frontend verification caught a test that asserted the loading status before the asynchronous unavailable-state response arrived; it was corrected to await that state. A formatting check also required a second pass over the new browser test. No application security boundary was relaxed. Successful frontend checks used the project's installed dependencies. The mobile table headings were adjusted after screenshot review and checked again.
-
-Browser/smoke tests used isolated synthetic volumes; those test projects and volumes were cleaned up. The regular localhost app was then recreated with the tested image, retaining its existing accounts and document volume. Its health endpoint and served dashboard bundle were verified. No performance benchmark, physical Mac disk collector, real ARM execution, new deployment, backup/restore drill or HTTPS validation was performed. No commits or pushes were made, and Checkpoint 7 has not begun.
-
-## Files for review
-
-- Backend: `backend/cmd/server/main.go`, `backend/go.mod`, `backend/internal/analytics/{analytics.go,analytics_test.go}`, `backend/internal/api/{api.go,api_test.go,analytics.go,analytics_test.go}`, `backend/internal/storage/capacity{,_unix,_linux,_darwin,_other,_test}.go`.
-- Frontend: `frontend/src/{StorageOverview.tsx,StorageOverview.test.tsx,App.tsx,App.test.tsx,api.ts,format.ts,styles.css}`, `frontend/e2e/documents.spec.ts`.
-- Persistence test: `tests/container_smoke.py`.
-- Documentation: `README.md`, `docs/{storage-analytics.md,architecture.md,threat-model.md}`. README contained an uncommitted project guide at checkpoint start; it was preserved, with the scope/feature/API references updated. Review that existing content before staging the file.
-
-For an interview, explain logical versus allocated bytes, process-visible versus host filesystems, free versus available/reserved blocks, why aggregate endpoints need administrator authorization, why failure is not zero, and why caching measurements must never cache permissions.
-
-## Host-storage correction verification
-
-The earlier Checkpoint 6 result above is historical. The correction adds host readings, a separate bar and a collector after the Docker-only dashboard was found insufficient for the administrator's system-storage need. The corrected frontend passed 32 tests, strict TypeScript/build and formatting. All four Chrome flows and the Docker persistence check passed again; screenshots showed real macOS capacity, reclaimable and free-now counters. The native collector and generated LaunchAgent plist were executed/validated on this Mac. New tests cover missing/invalid/stale/future/unknown-field/symlinked snapshots, host-vs-Docker growth limits and authorization. The final full Go vet/race suite passed with **77.8% combined coverage**, including the new CLI startup paths in the denominator; Linux CI does not exercise macOS launchd. Linux ARM64 and macOS Intel/ARM64 server builds and the ARM64 collector cross-build passed. Real ARM hardware and Windows deployment were not tested. The user-level LaunchAgent was installed, its successful exit and repeated timestamp updates were verified on this Mac, and the running app was updated using its existing document volume. An initial workspace/Documents registration exited with EX_CONFIG; moving only the collector executable and numeric snapshots to Application Support resolved it. The exact physical used/free categories are native macOS estimates, not a promise to reproduce every System Settings categorization byte-for-byte. A background process started from the tool session did not survive session cleanup, so the supported continuous setup uses the macOS user-level timer. No hosted CI result is claimed.
-
-Correction files additionally include `backend/cmd/host-storage/main.go`, `backend/internal/hoststorage/{sample.go,sample_test.go}`, `scripts/macos-storage.sh`, `Dockerfile`, `compose.yaml`, `.env.example`, `.gitignore`, `.dockerignore` and `docs/storage-performance.md`. Build artifacts and the exact per-user plist stay under ignored `.runtime/`; the active collector executable/snapshots are installed under user Application Support.
+The native capacity provider and user-level collector were previously executed on this Intel Mac, including repeated successful launchd runs and advancing snapshot timestamps. The collector and its snapshots are installed in user Application Support to avoid macOS Documents-folder privacy restrictions. The current Linux checks do not execute launchd. Physical disk attribution, throughput/latency benchmarks, peak-memory measurements, real ARM hardware, Windows runtime, hosted CI, production backup/restore and HTTPS deployment have not been established. A healthy localhost test does not establish production readiness.
 
 ## Platform portability
 
 The FamilyVault server/frontend/extraction stack remains a Linux-container application. Host metrics are optional: a missing collector cannot block authentication, uploads, downloads, indexing, search or previews. The included host collector runs on macOS only; Windows deployment with Docker Desktop Linux containers is intended but has not been tested, and accurate Windows host capacity needs a separate native provider. Without one, host capacity/headroom are unknown and the UI uses a generic host-unavailable state. No storage migration was made for this correction.
 
-Final live verification: the regular localhost app was healthy and its unprivileged container user successfully read the active Application Support snapshot. Eleven scheduled collector runs had completed with exit code 0 and advancing timestamps at the observed check. The frontend bundle served the corrected host-storage view. Vault data/accounts were preserved; synthetic test projects/volumes and benchmark data were cleaned up. Hosted CI and Windows runtime checks remain unverified.
-
-## Logical-byte vault share estimate
-
-The Mac storage bar has four categories: **FamilyVault (estimated)**, **Other used (estimated)**, **Reclaimable by macOS**, and **Free now**. Vault estimate = min(logical document bytes, measured used bytes); other used = measured used − vault estimate. Total used remains the macOS measurement. Remaining other-used space includes uncounted vault overhead. A zero-size vault has no marker; a nonzero vault below the bar's visible scale has a purple position marker and explanatory text, with actual proportional geometry unchanged. Estimates disappear when host measurements are unavailable. The original logical count remains visible even if the displayed estimate is capped. This change affects display only; storage layout, permissions and upload/download I/O are unchanged.
-
-Estimate display verification: all **35 frontend tests**, Prettier and strict TypeScript/production build passed. Tests cover proportional segment totals, zero/tiny vaults, capping inconsistent logical sizes and unavailable host data. Three existing Chrome flows passed; the storage flow passed after correcting an ambiguous text selector introduced by the new explanatory copy. Desktop/mobile screenshots were produced and the desktop estimate/marker layout inspected. The final image was applied to localhost with the existing accounts/data volume; health and served estimated labels were checked. Backend code was unchanged for this display addition, so the prior Go results were not rerun or relabelled as a new run. No commits or pushes were made.
-
-## Maintenance cleanup verification
-
-Removed unused progress styling, the collector's redundant polling loop/flag and obsolete installer compatibility. The collector now takes one sample per invocation; launchd owns its 30-second schedule. Shared API upload and browser login helpers replace duplicated setup without removing security or migration cases. Updated stale search/indexing comments.
-
-Go vet and the complete Go race suite passed (**78.3% combined statement coverage**); the API race suite passed again after consolidating helpers. All **35 frontend tests**, formatting, strict TypeScript/build, **four Chrome flows** and the isolated Docker persistence smoke test passed. Dependency tidy reported no changes. Linux ARM64/macOS Intel server and macOS ARM64 collector cross-builds passed. The installed collector configuration contains no obsolete flag; scheduled runs exited successfully with fresh snapshots. Hosted CI was not run. No commits or pushes were made, and Checkpoint 7 has not begun.
+For an interview, explain logical versus allocated bytes, process-visible versus host filesystems, free versus available/reserved blocks, why aggregate endpoints need administrator authorization, why failure is not zero, and why caching measurements must never cache permissions.

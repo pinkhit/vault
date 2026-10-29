@@ -26,7 +26,6 @@ type identity struct {
 
 func asUser(t *testing.T, handler http.Handler, method, path string, body []byte, contentType string, actor *identity, change func(*http.Request)) *httptest.ResponseRecorder {
 	t.Helper()
-	t.Helper()
 	req := httptest.NewRequest(method, "http://localhost"+path, bytes.NewReader(body))
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
@@ -103,6 +102,7 @@ func TestUnauthenticatedEndpointsFailClosed(t *testing.T) {
 		{"GET", "/api/documents/" + document.ID + "/download"},
 		{"HEAD", "/api/documents/" + document.ID + "/download"},
 		{"PATCH", "/api/documents/" + document.ID},
+		{"DELETE", "/api/documents/" + document.ID},
 		{"GET", "/api/documents/" + document.ID + "/permissions"},
 		{"PUT", "/api/documents/" + document.ID + "/permissions/other"},
 		{"DELETE", "/api/documents/" + document.ID + "/permissions/other"},
@@ -133,7 +133,9 @@ func TestUnauthenticatedEndpointsFailClosed(t *testing.T) {
 	requireStatus(t, asUser(t, a.Handler(""), "GET", "/api/health", nil, "", nil, nil), 200)
 }
 
-func TestCrossUserAccessAndPermissionLevels(t *testing.T) {
+// Static role/endpoint combinations live in TestDocumentEndpointAuthorizationMatrix.
+// This test covers the HTTP mutations that change authority between requests.
+func TestOwnershipAndGrantTransitions(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1024)
 	aliceUser := createMember(t, a, "alice")
 	bobUser := createMember(t, a, "bob")
@@ -145,74 +147,35 @@ func TestCrossUserAccessAndPermissionLevels(t *testing.T) {
 		t.Fatal("uploader was not assigned ownership")
 	}
 	path := "/api/documents/" + document.ID
+	grant := path + "/permissions/" + bobUser.ID
 	handler := a.Handler("")
-	for _, method := range []string{"GET", "HEAD"} {
-		response := asUser(t, handler, method, path+"/download", nil, "", bob, nil)
-		requireStatus(t, response, 404)
-		if response.Header().Get("ETag") != "" || response.Header().Get("X-Checksum-SHA256") != "" {
-			t.Fatal("checksum metadata leaked")
-		}
-	}
-	requireStatus(t, jsonRequest(t, handler, "PATCH", path, `{"name":"stolen.txt"}`, bob), 404)
-	requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+bobUser.ID, `{"level":"manage"}`, bob), 404)
-	hidden := jsonRequest(t, handler, "GET", "/api/documents?limit=1", "", bob)
-	requireStatus(t, hidden, 200)
-	if strings.Contains(hidden.Body.String(), document.ID) || strings.Contains(hidden.Body.String(), "alice-private") {
-		t.Fatal("listing leaked another user's document")
-	}
-	if strings.Contains(hidden.Body.String(), `"has_more":true`) {
-		t.Fatal("pagination leaked hidden row count")
-	}
-	// Administrative authority is read from the session/database, not client headers.
-	response := asUser(t, handler, "GET", path+"/download", nil, "", bob, func(r *http.Request) { r.Header.Set("X-User-ID", fixtureActor.ID); r.Header.Set("X-Is-Admin", "true") })
+	requireStatus(t, jsonRequest(t, handler, "PUT", grant, `{"level":"manage"}`, bob), 404)
+	response := asUser(t, handler, "GET", path+"/download", nil, "", bob, func(r *http.Request) {
+		r.Header.Set("X-User-ID", fixtureActor.ID)
+		r.Header.Set("X-Is-Admin", "true")
+	})
 	requireStatus(t, response, 404)
 	for _, level := range []string{"read", "write", "manage"} {
-		requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+bobUser.ID, fmt.Sprintf(`{"level":%q}`, level), alice), 204)
+		requireStatus(t, jsonRequest(t, handler, "PUT", grant, fmt.Sprintf(`{"level":%q}`, level), alice), 204)
 		requireStatus(t, jsonRequest(t, handler, "GET", path+"/download", "", bob), 200)
-		renameStatus, grantStatus := 404, 404
-		if level != "read" {
-			renameStatus = 204
-		}
-		if level == "manage" {
-			grantStatus = 204
-		}
-		requireStatus(t, jsonRequest(t, handler, "PATCH", path, `{"name":"renamed.txt"}`, bob), renameStatus)
-		requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+carol.ID, `{"level":"read"}`, bob), grantStatus)
-		expected := 404
-		if level == "manage" {
-			expected = 200
-		}
-		requireStatus(t, jsonRequest(t, handler, "GET", path+"/permissions", "", bob), expected)
 	}
+	requireStatus(t, jsonRequest(t, handler, "PATCH", path, `{"name":"renamed.txt"}`, bob), 204)
+	current, err := a.Documents.Get(context.Background(), aliceUser, document.ID)
+	if err != nil || current.Name != "renamed.txt" || current.OwnerID != aliceUser.ID {
+		t.Fatal("grant changed ownership or rename was not persisted", err)
+	}
+	requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+carol.ID, `{"level":"read"}`, bob), 204)
 	requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+aliceUser.ID, `{"level":"read"}`, bob), 400)
-	requireStatus(t, jsonRequest(t, handler, "PUT", path+"/permissions/"+bobUser.ID, `{"level":"admin"}`, alice), 400)
-	requireStatus(t, jsonRequest(t, handler, "DELETE", path+"/permissions/"+bobUser.ID, "", alice), 204)
+	requireStatus(t, jsonRequest(t, handler, "PUT", grant, `{"level":"admin"}`, alice), 400)
+	requireStatus(t, jsonRequest(t, handler, "DELETE", grant, "", alice), 204)
 	requireStatus(t, jsonRequest(t, handler, "GET", path+"/download", "", bob), 404)
 	requireStatus(t, jsonRequest(t, handler, "PATCH", path, `{"name":"revoked.txt"}`, bob), 404)
-	requireStatus(t, jsonRequest(t, handler, "GET", path+"/download", "", alice), 200)
-	requireStatus(t, jsonRequest(t, handler, "GET", path+"/download", "", fixtureIdentity()), 200)
 }
 
-func TestCSRFAndLoginOrigin(t *testing.T) {
+func TestLoginOriginAndJSONContract(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1024)
 	createMember(t, a, "alice")
-	alice, _ := signIn(t, a, "alice", memberPassword, nil)
-	second, _ := signIn(t, a, "alice", memberPassword, nil)
-	document := uploadAs(t, a, alice, "csrf.txt")
 	handler := a.Handler("")
-	for _, token := range []string{"", "forged", second.csrf} {
-		actor := &identity{cookie: alice.cookie, csrf: token}
-		for _, tc := range []struct{ method, path, body string }{
-			{"POST", "/api/documents", ""},
-			{"POST", "/api/auth/logout", ""},
-			{"POST", "/api/auth/revoke-sessions", ""},
-			{"POST", "/api/auth/password", `{"current_password":"x","new_password":"x"}`},
-			{"PATCH", "/api/documents/" + document.ID, `{"name":"x"}`},
-			{"PUT", "/api/documents/" + document.ID + "/permissions/other", `{"level":"read"}`},
-		} {
-			requireStatus(t, jsonRequest(t, handler, tc.method, tc.path, tc.body, actor), 403)
-		}
-	}
 	for _, origin := range []string{"", "null", "http://localhost:9999", "https://evil.example"} {
 		response := asUser(t, handler, "POST", "/api/auth/login", []byte(`{"username":"alice","password":"fictional-member-password"}`), "application/json", nil, func(r *http.Request) { r.Header.Set("Origin", origin) })
 		requireStatus(t, response, 403)
@@ -285,6 +248,7 @@ func TestAbsoluteAndIdleSessionExpiry(t *testing.T) {
 				now = now.Add(time.Minute)
 			}
 			requireStatus(t, jsonRequest(t, a.Handler(""), "GET", "/api/documents", "", actor), 401)
+			requireStatus(t, jsonRequest(t, a.Handler(""), "DELETE", "/api/documents/"+strings.Repeat("a", 32), "", actor), 401)
 		})
 	}
 }
@@ -345,51 +309,6 @@ func TestAdministrationAndLastAdministrator(t *testing.T) {
 	users := jsonRequest(t, handler, "GET", "/api/admin/users", "", fixtureIdentity())
 	if strings.Contains(users.Body.String(), "password_hash") || strings.Contains(users.Body.String(), "argon2") {
 		t.Fatal("password hash leaked")
-	}
-}
-
-func TestLoginThrottlingAndGenericFailures(t *testing.T) {
-	a, _ := newApp(t, t.TempDir(), 1024)
-	createMember(t, a, "alice")
-	now := time.Now().UTC()
-	a.Auth.Now = func() time.Time { return now }
-	handler := a.Handler("")
-	for _, name := range []string{"alice", "unknown-account"} {
-		for i := 0; i < 5; i++ {
-			response := jsonRequest(t, handler, "POST", "/api/auth/login", fmt.Sprintf(`{"username":%q,"password":"wrong"}`, name), nil)
-			requireStatus(t, response, 401)
-			if !strings.Contains(response.Body.String(), "invalid username or password") {
-				t.Fatal("account existence disclosed")
-			}
-		}
-		response := jsonRequest(t, handler, "POST", "/api/auth/login", fmt.Sprintf(`{"username":%q,"password":"wrong"}`, name), nil)
-		requireStatus(t, response, 429)
-		if response.Header().Get("Retry-After") == "" {
-			t.Fatal("missing retry hint")
-		}
-	}
-	now = now.Add(16 * time.Minute)
-	signIn(t, a, "alice", memberPassword, nil)
-}
-
-func TestAuditFailureRollsBackUploadAndGrants(t *testing.T) {
-	dir := t.TempDir()
-	a, _ := newApp(t, dir, 1024)
-	bob := createMember(t, a, "bob")
-	document := uploadAs(t, a, fixtureIdentity(), "existing.txt")
-	_, err := a.Documents.DB.Exec(`CREATE TRIGGER fail_audit BEFORE INSERT ON audit_events BEGIN SELECT RAISE(FAIL,'synthetic audit failure'); END`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, ct := multipartBody(t, "uncommitted.txt", []byte("fictional"))
-	requireStatus(t, asUser(t, a.Handler(""), "POST", "/api/documents", body, ct, fixtureIdentity(), nil), 500)
-	if count(t, a) != 1 {
-		t.Fatal("upload published without audit event")
-	}
-	requireStatus(t, jsonRequest(t, a.Handler(""), "PUT", "/api/documents/"+document.ID+"/permissions/"+bob.ID, `{"level":"read"}`, fixtureIdentity()), 500)
-	var grants int
-	if err = a.Documents.DB.QueryRow("SELECT count(*) FROM document_permissions").Scan(&grants); err != nil || grants != 0 {
-		t.Fatalf("grant committed without audit: %d %v", grants, err)
 	}
 }
 

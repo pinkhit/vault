@@ -217,6 +217,14 @@ func (a *API) grants(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"permissions": grants})
 }
 
+func (a *API) deleteDocument(w http.ResponseWriter, r *http.Request) {
+	if err := a.Documents.Delete(r.Context(), sessionFrom(r).User, r.PathValue("id")); err != nil {
+		a.securityError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *API) setGrant(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Level string `json:"level"`

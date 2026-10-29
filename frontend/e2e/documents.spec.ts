@@ -20,7 +20,7 @@ async function signIn(
   ).toBeVisible();
 }
 
-test('upload, reload and download exact original bytes on desktop and mobile', async ({
+test('upload, download exact bytes and delete with confirmation on desktop and mobile', async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -70,6 +70,18 @@ test('upload, reload and download exact original bytes on desktop and mobile', a
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page
+    .getByRole('button', { name: 'Delete fictional-invoice.txt' })
+    .click();
+  await expect(link).toBeVisible();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page
+    .getByRole('button', { name: 'Delete fictional-invoice.txt' })
+    .click();
+  await expect(page.getByText('Your library starts here')).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Your library starts here')).toBeVisible();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Sign in', exact: true }),

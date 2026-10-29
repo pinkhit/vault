@@ -8,6 +8,7 @@ import {
   logout,
   listDocuments,
   uploadDocument,
+  deleteDocument,
   APIError,
   searchDocuments,
   getPreview,
@@ -24,6 +25,7 @@ vi.mock('./api', async (importOriginal) => {
     logout: vi.fn(),
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    deleteDocument: vi.fn(),
     searchDocuments: vi.fn(),
     getPreview: vi.fn(),
     getStorageOverview: vi.fn(),
@@ -64,6 +66,109 @@ beforeEach(() => {
 });
 
 describe('document browser', () => {
+  it.each([false, true])(
+    'shows deletion for owned files or admin=%s',
+    async (admin) => {
+      vi.mocked(getSession).mockResolvedValue({
+        ...session,
+        user: { ...session.user, is_admin: admin },
+      });
+      vi.mocked(listDocuments).mockResolvedValue({
+        documents: [
+          document,
+          {
+            ...document,
+            id: 'f'.repeat(32),
+            name: 'Shared.txt',
+            owner_id: 'other',
+          },
+        ],
+        has_more: false,
+      });
+      render(<App />);
+      expect(
+        await screen.findByRole('button', { name: `Delete ${document.name}` }),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole('button', { name: 'Delete Shared.txt' }) !== null,
+      ).toBe(admin);
+    },
+  );
+
+  it('confirms deletion, keeps failed files available for retry and refreshes after success', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.mocked(listDocuments).mockResolvedValue({
+      documents: [document],
+      has_more: false,
+    });
+    const view = render(<App />);
+    const button = await screen.findByRole('button', {
+      name: `Delete ${document.name}`,
+    });
+    fireEvent.click(button);
+    expect(deleteDocument).not.toHaveBeenCalled();
+    confirm.mockReturnValue(true);
+    vi.mocked(deleteDocument).mockRejectedValueOnce(
+      new Error('Deletion failed'),
+    );
+    fireEvent.click(button);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Deletion failed',
+    );
+    expect(button).toBeEnabled();
+    vi.mocked(deleteDocument).mockResolvedValueOnce();
+    vi.mocked(listDocuments).mockResolvedValue({
+      documents: [],
+      has_more: false,
+    });
+    fireEvent.click(button);
+    await screen.findByText('Your library starts here');
+    expect(deleteDocument).toHaveBeenLastCalledWith(document.id);
+    expect(
+      screen.queryByRole('button', { name: `Delete ${document.name}` }),
+    ).not.toBeInTheDocument();
+    view.unmount();
+    confirm.mockRestore();
+  });
+
+  it('deletes from search results and clears the authenticated view on deletion session expiry', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(searchDocuments).mockResolvedValueOnce({
+      results: [{ document, snippet: 'delete me', match: 'content' }],
+      has_more: false,
+    });
+    vi.mocked(deleteDocument).mockResolvedValueOnce();
+    render(<App />);
+    await screen.findByText('Your library starts here');
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'invoice' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
+    const button = await screen.findByRole('button', {
+      name: `Delete ${document.name}`,
+    });
+    vi.mocked(searchDocuments).mockResolvedValue({
+      results: [],
+      has_more: false,
+    });
+    fireEvent.click(button);
+    await screen.findByText('No matching documents');
+    expect(screen.queryByText('delete me')).not.toBeInTheDocument();
+    vi.mocked(searchDocuments).mockResolvedValue({
+      results: [{ document, snippet: 'another result', match: 'content' }],
+      has_more: false,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh results' }));
+    vi.mocked(deleteDocument).mockRejectedValueOnce(
+      new APIError('authentication required', 401),
+    );
+    fireEvent.click(
+      await screen.findByRole('button', { name: `Delete ${document.name}` }),
+    );
+    await screen.findByRole('heading', { name: 'Sign in' });
+    confirm.mockRestore();
+  });
+
   it('exposes storage only to administrators and fetches it only when opened', async () => {
     const first = render(<App />);
     await screen.findByText('Your library starts here');

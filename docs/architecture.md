@@ -56,6 +56,8 @@ There is **no atomic transaction spanning SQLite and the filesystem**. Before se
 
 Missing/corrupt referenced objects stop startup; metadata is retained for investigation. Unexpected names in storage directories also stop recovery. Do not modify files in the data volume manually. Recovery hashes all stored bytes and can become slow for a large library. Downloads also verify the entire object before sending it; this is intentional for the small development repository and costs an extra sequential read. File contents are immutable through the API.
 
+Deletion uses the reverse ordering: a SQL DELETE checks the enabled owner or administrator, cascades grants/jobs/passages/search entries and records its audit event in one transaction, then storage unlinks the object and syncs the directory. Grants confer no delete authority. Unlink is never attempted after a failed or ambiguous commit. A crash or cleanup failure leaves an inaccessible orphan for the same startup reconciliation; no new queue or schema is required. This is logical deletion with best-effort immediate file removal, not secure erasure or undo. See the [permission rules](authentication.md#permission-rules).
+
 A process crash is covered by automated tests. Power-loss durability depends on the host filesystem, Docker volume implementation, storage device and its handling of sync requests. This milestone does not establish production durability or a backup guarantee.
 
 ## Deployment and portability

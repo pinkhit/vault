@@ -1,5 +1,28 @@
 import { expect, it, vi } from 'vitest';
-import { searchDocuments } from './api';
+import { deleteDocument, getSession, searchDocuments } from './api';
+
+it('sends deletion with the current session CSRF token and handles an empty success response', async () => {
+  const fetchMock = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ csrf_token: 'current-session-csrf' })),
+    )
+    .mockResolvedValueOnce(new Response(null, { status: 204 }));
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    await getSession();
+    await expect(deleteDocument('id/with?separators')).resolves.toBeUndefined();
+    const [path, options] = fetchMock.mock.calls[1]!;
+    expect(path).toBe('/api/documents/id%2Fwith%3Fseparators');
+    expect(options?.method).toBe('DELETE');
+    expect(options?.credentials).toBe('same-origin');
+    expect(new Headers(options?.headers).get('X-CSRF-Token')).toBe(
+      'current-session-csrf',
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 it('encodes search input as one same-origin parameter and propagates cancellation', async () => {
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(

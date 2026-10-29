@@ -78,71 +78,63 @@ it.each(['csv', 'xlsx'] as const)(
   },
 );
 
-it('navigates worksheets and clears old cells before the next response', async () => {
-  const first: Preview = {
-    kind: 'xlsx',
-    sheet_name: 'Invoices',
-    rows: [['first sheet']],
-    page: 1,
-    pages: 2,
-    truncated: false,
-  };
-  vi.mocked(getPreview).mockResolvedValueOnce(first);
-  const pending = deferred<Preview>();
-  vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
-  render(view());
-  await screen.findByRole('cell', { name: 'first sheet' });
-  expect(screen.getByRole('button', { name: 'Previous sheet' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Next sheet' }));
-  expect(screen.queryByText('first sheet')).not.toBeInTheDocument();
-  await act(async () => {
-    pending.resolve({
+it.each([
+  {
+    kind: 'pdf' as const,
+    unit: 'page',
+    first: { image: 'first' },
+    second: { image: 'second' },
+  },
+  {
+    kind: 'xlsx' as const,
+    unit: 'sheet',
+    first: { sheet_name: 'Invoices', rows: [['first']] },
+    second: { sheet_name: 'Summary', rows: [['second']] },
+  },
+])(
+  'navigates $kind previews and clears old content while loading',
+  async ({ kind, unit, first, second }) => {
+    const preview: Preview = {
+      kind,
+      page: 1,
+      pages: 2,
+      truncated: false,
       ...first,
-      sheet_name: 'Summary',
-      rows: [['second sheet']],
-      page: 2,
+    };
+    vi.mocked(getPreview).mockResolvedValueOnce(preview);
+    const pending = deferred<Preview>();
+    vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
+    render(view());
+    const role = kind === 'pdf' ? 'img' : 'cell';
+    await screen.findByRole(role);
+    expect(
+      screen.getByRole('button', { name: `Previous ${unit}` }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: `Next ${unit}` }));
+    expect(screen.queryByRole(role)).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Preparing preview');
+    await act(async () => {
+      pending.resolve({ ...preview, ...second, page: 2 });
     });
-  });
-  expect(screen.getByRole('cell', { name: 'second sheet' })).toBeVisible();
-  expect(screen.getByRole('status')).toHaveTextContent('Sheet 2 of 2');
-  expect(screen.getByRole('button', { name: 'Next sheet' })).toBeDisabled();
-  expect(getPreview).toHaveBeenLastCalledWith(
-    document.id,
-    2,
-    expect.any(AbortSignal),
-  );
-});
-
-it('loads PDF pages without embedded PDF content and hides old pages while fetching', async () => {
-  const first: Preview = {
-    kind: 'pdf',
-    page: 1,
-    pages: 2,
-    image: 'first',
-    truncated: false,
-  };
-  vi.mocked(getPreview).mockResolvedValueOnce(first);
-  const pending = deferred<Preview>();
-  vi.mocked(getPreview).mockReturnValueOnce(pending.promise);
-  render(view());
-  await screen.findByRole('img');
-  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-  expect(screen.queryByRole('img')).not.toBeInTheDocument();
-  expect(screen.getByRole('status')).toHaveTextContent('Preparing preview');
-  await act(async () => {
-    pending.resolve({ ...first, page: 2, image: 'second' });
-  });
-  expect(screen.getByRole('img')).toHaveAttribute(
-    'src',
-    'data:image/png;base64,second',
-  );
-  expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
-  expect(getPreview).toHaveBeenLastCalledWith(
-    document.id,
-    2,
-    expect.any(AbortSignal),
-  );
-});
+    if (kind === 'pdf') {
+      expect(screen.getByRole('img')).toHaveAttribute(
+        'src',
+        'data:image/png;base64,second',
+      );
+    } else {
+      expect(screen.getByRole('cell', { name: 'second' })).toBeVisible();
+    }
+    expect(screen.getByRole('status')).toHaveTextContent(
+      `${kind === 'pdf' ? 'Page' : 'Sheet'} 2 of 2`,
+    );
+    expect(screen.getByRole('button', { name: `Next ${unit}` })).toBeDisabled();
+    expect(getPreview).toHaveBeenLastCalledWith(
+      document.id,
+      2,
+      expect.any(AbortSignal),
+    );
+  },
+);
 
 it('clears prior content on refresh errors, supports retry and handles unsupported files', async () => {
   vi.mocked(getPreview).mockResolvedValueOnce({

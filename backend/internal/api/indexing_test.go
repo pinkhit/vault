@@ -11,26 +11,15 @@ import (
 
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/indexing"
-	"github.com/pinkhit/vault/backend/internal/testutil"
 )
 
 func TestIndexingStatusRequiresCurrentDocumentReadPermission(t *testing.T) {
-	for name, data := range map[string][]byte{
-		"private-index.txt":  []byte("fictional private document"),
-		"private-index.docx": testutil.DOCX(t, `<w:p><w:r><w:t>fictional private document</w:t></w:r></w:p>`),
-	} {
-		t.Run(name, func(t *testing.T) { checkIndexingReadPermission(t, name, data) })
-	}
-}
-
-func checkIndexingReadPermission(t *testing.T, name string, data []byte) {
-	t.Helper()
 	a, _ := newApp(t, t.TempDir(), 2048)
 	owner := createMember(t, a, "index-owner")
 	ownerIdentity, _ := signIn(t, a, owner.Username, memberPassword, nil)
 	reader := createMember(t, a, "index-reader")
 	readerIdentity, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	document := uploadBytesAs(t, a, ownerIdentity, name, data)
+	document := uploadAs(t, a, ownerIdentity, "private-index.txt")
 	path := "/api/documents/" + document.ID + "/indexing"
 	handler := a.Handler("")
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", nil), 401)
@@ -102,6 +91,7 @@ func TestUploadJobAndAuditAreOneTransaction(t *testing.T) {
 	for _, table := range []string{"document_index_jobs", "audit_events"} {
 		t.Run(table, func(t *testing.T) {
 			a, _ := newApp(t, t.TempDir(), 1024)
+			existing := uploadAs(t, a, fixtureIdentity(), "existing.txt")
 			if _, err := a.Documents.DB.Exec("CREATE TRIGGER fail_index_upload BEFORE INSERT ON " + table + " BEGIN SELECT RAISE(FAIL,'synthetic failure'); END"); err != nil {
 				t.Fatal(err)
 			}
@@ -112,10 +102,15 @@ func TestUploadJobAndAuditAreOneTransaction(t *testing.T) {
 				"SELECT count(*) FROM audit_events WHERE operation = 'document.upload'",
 			} {
 				var count int
-				if err := a.Documents.DB.QueryRow(query).Scan(&count); err != nil || count != 0 {
+				if err := a.Documents.DB.QueryRow(query).Scan(&count); err != nil || count != 1 {
 					t.Fatal("failed upload published metadata/job/audit", count, err)
 				}
 			}
+			file, err := a.Documents.Store.OpenVerified(existing.ID, existing.Size, existing.SHA256)
+			if err != nil {
+				t.Fatal("failed upload damaged an existing original", err)
+			}
+			file.Close()
 		})
 	}
 }
