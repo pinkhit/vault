@@ -23,6 +23,7 @@ def main():
         FAMILYVAULT_SESSION_TTL="8h",
         FAMILYVAULT_SESSION_IDLE_TTL="30m",
         FAMILYVAULT_MAX_UPLOAD_BYTES="26214400",
+        FAMILYVAULT_HOST_STORAGE_FILE="/nonexistent/disabled-for-isolated-test.json",
     )
 
     def run(*arguments, **options):
@@ -62,6 +63,7 @@ def main():
         assert status == 200 and b"FamilyVault" in homepage
         assert request("GET", "/api/documents")[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
+        assert request("GET", "/api/admin/storage")[0] == 401
         credentials = json.dumps({"username": "smoke-admin", "password": password}).encode()
         status, body, headers = request("POST", "/api/auth/login", credentials, "application/json")
         assert status == 200, "Login failed"
@@ -135,14 +137,25 @@ def main():
         assert base64.b64decode(preview["image"], validate=True).startswith(b"\x89PNG\r\n\x1a\n")
         status, original_pdf, _ = request("GET", "/api/documents/" + pdf_document["id"] + "/download")
         assert status == 200 and original_pdf == pdf, "PDF preview changed original bytes"
+        status, body, headers = request("GET", "/api/admin/storage")
+        assert status == 200 and headers["Cache-Control"] == "no-store"
+        metrics = json.loads(body)
+        assert metrics["documents"]["count"] == 2
+        assert metrics["documents"]["logical_bytes"] == len(fixture) + len(pdf)
+        assert sum(item["count"] for item in metrics["documents"]["by_type"]) == 2
+        assert metrics["filesystem"]["source"] == "container-filesystem"
+        capacity = metrics["filesystem"]["capacity"]
+        assert capacity and capacity["total_bytes"] > 0
+        assert capacity["used_bytes"] + capacity["available_bytes"] + capacity["reserved_bytes"] == capacity["total_bytes"]
         status, body, _ = request("GET", "/api/documents?limit=100")
         assert status == 200 and any(item["id"] == document["id"] for item in json.loads(body)["documents"])
         assert request("POST", "/api/auth/logout")[0] == 204
         assert request("GET", "/api/documents")[0] == 401
         assert request("GET", indexing_path)[0] == 401
         assert request("GET", preview_path)[0] == 401
+        assert request("GET", "/api/admin/storage")[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
-        print("PASS: authenticated files, background indexing/search, text/PDF previews, restart persistence and logout revocation")
+        print("PASS: authenticated files, indexing/search, text/PDF previews, storage analytics, restart persistence and logout revocation")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)

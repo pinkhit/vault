@@ -93,8 +93,8 @@ func Claim(ctx context.Context, db *sql.DB) (Job, error) {
 }
 
 // Finish accepts only the current processing attempt against the current bytes.
-// Pending schedules a retry; all other accepted results are terminal. Future
-// extracted-text writes must share this transaction and roll back on ErrStale.
+// Pending schedules a retry; all other accepted results are terminal.
+// Passage writes share this transaction and roll back on ErrStale.
 func Finish(ctx context.Context, db Executor, job Job, result Result) error {
 	if !utf8.ValidString(result.LastError) || len(result.LastError) > 512 {
 		return ErrResult

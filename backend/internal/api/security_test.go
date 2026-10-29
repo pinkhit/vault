@@ -83,8 +83,7 @@ func signIn(t *testing.T, a *API, username, password string, old *identity) (*id
 
 func uploadAs(t *testing.T, a *API, actor *identity, name string) documents.Document {
 	t.Helper()
-	body, contentType := multipartBody(t, name, []byte("fictional private document"))
-	return documentFrom(t, asUser(t, a.Handler(""), "POST", "/api/documents", body, contentType, actor, nil))
+	return uploadBytesAs(t, a, actor, name, []byte("fictional private document"))
 }
 
 func requireStatus(t *testing.T, response *httptest.ResponseRecorder, expected int) {

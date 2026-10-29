@@ -13,6 +13,13 @@ COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/create-admin ./cmd/create-admin
 
+FROM backend AS host-storage-build
+ARG HOST_ARCH=amd64
+RUN CGO_ENABLED=0 GOOS=darwin GOARCH=${HOST_ARCH} go build -trimpath -o /out/host-storage ./cmd/host-storage
+
+FROM scratch AS host-storage-export
+COPY --from=host-storage-build /out/host-storage /host-storage
+
 FROM alpine:3.23
 RUN apk add --no-cache poppler-utils font-dejavu \
     && fc-cache -f \

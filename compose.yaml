@@ -11,8 +11,13 @@ services:
       FAMILYVAULT_SESSION_TTL: "${FAMILYVAULT_SESSION_TTL:-8h}"
       FAMILYVAULT_SESSION_IDLE_TTL: "${FAMILYVAULT_SESSION_IDLE_TTL:-30m}"
       FAMILYVAULT_COOKIE_SECURE: "${FAMILYVAULT_COOKIE_SECURE:-false}"
+      FAMILYVAULT_HOST_STORAGE_FILE: "${FAMILYVAULT_HOST_STORAGE_FILE:-/run/familyvault-host/storage.json}"
     volumes:
       - vault-data:/data
+      - type: bind
+        source: ./.runtime/host-storage
+        target: /run/familyvault-host
+        read_only: true
     read_only: true
     tmpfs:
       - /tmp:size=16m,mode=1777

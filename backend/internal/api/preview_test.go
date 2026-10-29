@@ -16,16 +16,9 @@ import (
 	"time"
 
 	"github.com/pinkhit/vault/backend/internal/authorization"
-	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/preview"
 	"github.com/pinkhit/vault/backend/internal/testutil"
 )
-
-func previewUpload(t *testing.T, a *API, actor *identity, name string, data []byte) documents.Document {
-	t.Helper()
-	body, kind := multipartBody(t, name, data)
-	return documentFrom(t, asUser(t, a.Handler(""), "POST", "/api/documents", body, kind, actor, nil))
-}
 
 func TestPreviewAuthorizationRevocationAndMetadataPrivacy(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1024)
@@ -33,7 +26,7 @@ func TestPreviewAuthorizationRevocationAndMetadataPrivacy(t *testing.T) {
 	reader := createMember(t, a, "preview-reader")
 	ownerID, _ := signIn(t, a, owner.Username, memberPassword, nil)
 	readerID, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	doc := previewUpload(t, a, ownerID, "private <img src=x>.txt", []byte("Fictional <script>private-sentinel</script>"))
+	doc := uploadBytesAs(t, a, ownerID, "private <img src=x>.txt", []byte("Fictional <script>private-sentinel</script>"))
 	path := "/api/documents/" + doc.ID + "/preview"
 	handler := a.Handler("")
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", nil), 401)
@@ -91,7 +84,7 @@ func TestPreviewAuthorizationRevocationAndMetadataPrivacy(t *testing.T) {
 func TestPreviewIntegrityAuditAndOriginalPreservation(t *testing.T) {
 	dir := t.TempDir()
 	a, _ := newApp(t, dir, 1<<20)
-	doc := previewUpload(t, a, fixtureIdentity(), "preview.txt", []byte("Original synthetic bytes"))
+	doc := uploadBytesAs(t, a, fixtureIdentity(), "preview.txt", []byte("Original synthetic bytes"))
 	path := "/api/documents/" + doc.ID + "/preview"
 	requireStatus(t, jsonRequest(t, a.Handler(""), "GET", path, "", fixtureIdentity()), 200)
 	var events int
@@ -131,7 +124,7 @@ func TestPreviewIntegrityAuditAndOriginalPreservation(t *testing.T) {
 		{"malformed.json", `{"broken":`, 422},
 		{"oversized.json", strings.Repeat(" ", preview.MaxTextBytes) + "{}", 413},
 	} {
-		document := previewUpload(t, a, fixtureIdentity(), test.name, []byte(test.body))
+		document := uploadBytesAs(t, a, fixtureIdentity(), test.name, []byte(test.body))
 		requireStatus(t, jsonRequest(t, a.Handler(""), "GET", "/api/documents/"+document.ID+"/preview", "", fixtureIdentity()), test.status)
 		response := jsonRequest(t, a.Handler(""), "GET", "/api/documents/"+document.ID+"/download", "", fixtureIdentity())
 		requireStatus(t, response, 200)
@@ -146,7 +139,7 @@ func TestPDFPreviewAPIUsesInertPageImages(t *testing.T) {
 		t.Skip("PDF resource limits require Linux")
 	}
 	a, _ := newApp(t, t.TempDir(), 1024*1024)
-	doc := previewUpload(t, a, fixtureIdentity(), "inline.pdf", testutil.PDF("Synthetic page one", "Synthetic page two"))
+	doc := uploadBytesAs(t, a, fixtureIdentity(), "inline.pdf", testutil.PDF("Synthetic page one", "Synthetic page two"))
 	response := jsonRequest(t, a.Handler(""), "GET", "/api/documents/"+doc.ID+"/preview?page=2", "", fixtureIdentity())
 	requireStatus(t, response, 200)
 	var result preview.Result
@@ -162,7 +155,7 @@ func TestPreviewRevocationDuringRenderingDiscardsThePage(t *testing.T) {
 	a, _ := newApp(t, t.TempDir(), 1<<20)
 	reader := createMember(t, a, "preview-in-flight")
 	actor, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	doc := previewUpload(t, a, fixtureIdentity(), "in-flight.pdf", testutil.PDF("Private page"))
+	doc := uploadBytesAs(t, a, fixtureIdentity(), "in-flight.pdf", testutil.PDF("Private page"))
 	if err := authorization.SetGrant(context.Background(), a.Documents.DB, fixtureActor, doc.ID, reader.ID, "read"); err != nil {
 		t.Fatal(err)
 	}

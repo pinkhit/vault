@@ -14,6 +14,7 @@ import {
 import DocumentLibrary from './DocumentLibrary';
 import DocumentSearch from './DocumentSearch';
 import DocumentPreview from './DocumentPreview';
+import StorageOverview from './StorageOverview';
 import { formatBytes } from './format';
 import LoginForm from './LoginForm';
 
@@ -102,6 +103,7 @@ function DocumentBrowser({
   const [uploadError, setUploadError] = useState('');
   const [notice, setNotice] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [showStorage, setShowStorage] = useState(false);
   const [preview, setPreview] = useState<{
     document: DocumentRecord;
     page: number;
@@ -216,6 +218,16 @@ function DocumentBrowser({
         </a>
         <div className="header-actions">
           <span>{session.user.username}</span>
+          {session.user.is_admin && (
+            <button
+              className="secondary"
+              aria-expanded={showStorage}
+              aria-controls="storage-overview"
+              onClick={() => setShowStorage((value) => !value)}
+            >
+              Storage overview
+            </button>
+          )}
           <button
             className="secondary"
             disabled={uploading || signingOut}
@@ -262,6 +274,9 @@ function DocumentBrowser({
               Retry connection
             </button>
           </p>
+        )}
+        {session.user.is_admin && showStorage && (
+          <StorageOverview onUnauthorized={onSignOut} />
         )}
         <section className="upload-card" aria-labelledby="upload-title">
           <div>

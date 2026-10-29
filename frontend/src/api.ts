@@ -53,6 +53,36 @@ export interface Health {
   max_upload_bytes: number;
 }
 
+export interface StorageReport {
+  host_storage?: {
+    version: number;
+    collected_at: string;
+    total_bytes: number;
+    free_bytes: number;
+    available_including_reclaimable_bytes: number;
+  } | null;
+  growth_available_bytes?: number | null;
+  documents: {
+    count: number;
+    logical_bytes: number;
+    by_type: { media_type: string; count: number; logical_bytes: number }[];
+  };
+  filesystem: {
+    source: 'container-filesystem' | 'native-filesystem';
+    checked_at: string;
+    capacity: {
+      total_bytes: number;
+      used_bytes: number;
+      available_bytes: number;
+      reserved_bytes: number;
+      low_space: boolean;
+    } | null;
+  };
+}
+
+export const getStorageOverview = (signal?: AbortSignal) =>
+  request<StorageReport>('/api/admin/storage', { signal });
+
 export interface User {
   id: string;
   username: string;

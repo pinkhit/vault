@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/pinkhit/vault/backend/internal/analytics"
 	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/documents"
 	"github.com/pinkhit/vault/backend/internal/storage"
@@ -25,6 +26,7 @@ type API struct {
 	Documents *documents.Service
 	Log       *slog.Logger
 	Auth      *auth.Service
+	Storage   *analytics.Service
 }
 
 func (a *API) Handler(staticDir string) http.Handler {
@@ -39,6 +41,7 @@ func (a *API) Handler(staticDir string) http.Handler {
 	mux.HandleFunc("POST /api/admin/users", a.admin(a.createUser))
 	mux.HandleFunc("PATCH /api/admin/users/{id}", a.admin(a.updateUser))
 	mux.HandleFunc("GET /api/admin/audit", a.admin(a.auditEvents))
+	mux.HandleFunc("GET /api/admin/storage", a.admin(a.storageAnalytics))
 	mux.HandleFunc("GET /api/documents", a.protect(a.list))
 	mux.HandleFunc("GET /api/search", a.protect(a.search))
 	mux.HandleFunc("POST /api/documents", a.protect(a.upload))

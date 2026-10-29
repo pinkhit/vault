@@ -11,6 +11,7 @@ import {
   APIError,
   searchDocuments,
   getPreview,
+  getStorageOverview,
 } from './api';
 
 vi.mock('./api', async (importOriginal) => {
@@ -25,6 +26,7 @@ vi.mock('./api', async (importOriginal) => {
     uploadDocument: vi.fn(),
     searchDocuments: vi.fn(),
     getPreview: vi.fn(),
+    getStorageOverview: vi.fn(),
   };
 });
 const session = {
@@ -62,6 +64,38 @@ beforeEach(() => {
 });
 
 describe('document browser', () => {
+  it('exposes storage only to administrators and fetches it only when opened', async () => {
+    const first = render(<App />);
+    await screen.findByText('Your library starts here');
+    expect(
+      screen.queryByRole('button', { name: 'Storage overview' }),
+    ).not.toBeInTheDocument();
+    expect(getStorageOverview).not.toHaveBeenCalled();
+    first.unmount();
+    vi.mocked(getSession).mockResolvedValue({
+      ...session,
+      user: { ...session.user, is_admin: true },
+    });
+    vi.mocked(getStorageOverview).mockResolvedValue({
+      documents: { count: 0, logical_bytes: 0, by_type: [] },
+      filesystem: {
+        source: 'container-filesystem',
+        checked_at: '2026-10-29T01:00:00Z',
+        capacity: null,
+      },
+    });
+    render(<App />);
+    const button = await screen.findByRole('button', {
+      name: 'Storage overview',
+    });
+    expect(getStorageOverview).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    await screen.findByText('No documents stored yet.');
+    fireEvent.click(button);
+    expect(
+      screen.queryByText('No documents stored yet.'),
+    ).not.toBeInTheDocument();
+  });
   it('opens previews from the library and search results, then clears them on session revocation', async () => {
     vi.mocked(listDocuments).mockResolvedValue({
       documents: [document],

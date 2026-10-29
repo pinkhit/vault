@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pinkhit/vault/backend/internal/analytics"
 	"github.com/pinkhit/vault/backend/internal/auth"
 
 	"github.com/pinkhit/vault/backend/internal/database"
@@ -69,7 +70,7 @@ func newApp(t *testing.T, dir string, limit int64) (*API, func()) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &API{Auth: authentication, Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Log: log}
+	a := &API{Auth: authentication, Documents: &documents.Service{DB: db, Store: store, MaxBytes: limit, Log: log}, Storage: analytics.New(db, store.VolumeCapacity, false), Log: log}
 	var once sync.Once
 	closeApp := func() { once.Do(func() { db.Close(); store.Close() }) }
 	t.Cleanup(closeApp)
@@ -110,6 +111,12 @@ func send(handler http.Handler, method, path string, body []byte, contentType, c
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	return w
+}
+
+func uploadBytesAs(t *testing.T, a *API, actor *identity, name string, data []byte) documents.Document {
+	t.Helper()
+	body, kind := multipartBody(t, name, data)
+	return documentFrom(t, asUser(t, a.Handler(""), "POST", "/api/documents", body, kind, actor, nil))
 }
 
 func documentFrom(t *testing.T, w *httptest.ResponseRecorder) documents.Document {

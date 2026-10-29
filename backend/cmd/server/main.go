@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/pinkhit/vault/backend/internal/analytics"
 	"github.com/pinkhit/vault/backend/internal/api"
 	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/config"
@@ -72,7 +73,9 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	handler := (&api.API{Documents: service, Auth: authentication, Log: log}).Handler(c.StaticDir)
+	metrics := analytics.New(db, store.VolumeCapacity, os.Getenv("FAMILYVAULT_CONTAINER") == "1")
+	metrics.HostStorageFile = os.Getenv("FAMILYVAULT_HOST_STORAGE_FILE")
+	handler := (&api.API{Documents: service, Auth: authentication, Storage: metrics, Log: log}).Handler(c.StaticDir)
 	server := &http.Server{
 		Addr:              c.Address,
 		Handler:           handler,

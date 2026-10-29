@@ -3,12 +3,17 @@ import { readFile } from 'node:fs/promises';
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-async function signIn(page: Page) {
+async function signIn(
+  page: Page,
+  username = 'browser-admin',
+  password = 'fictional-browser-password',
+) {
   await page.goto('/');
-  await page.getByLabel('Username').fill('browser-admin');
-  await page
-    .getByLabel('Password', { exact: true })
-    .fill('fictional-browser-password');
+  await expect(
+    page.getByRole('heading', { name: 'Sign in', exact: true }),
+  ).toBeVisible();
+  await page.getByLabel('Username').fill(username);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'Documents', exact: true }),
@@ -20,18 +25,7 @@ test('upload, reload and download exact original bytes on desktop and mobile', a
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto('/');
-  await expect(
-    page.getByRole('heading', { name: 'Sign in', exact: true }),
-  ).toBeVisible();
-  await page.getByLabel('Username').fill('browser-admin');
-  await page
-    .getByLabel('Password', { exact: true })
-    .fill('fictional-browser-password');
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'Documents', exact: true }),
-  ).toBeVisible();
+  await signIn(page);
   await expect(page.getByText('Your library starts here')).toBeVisible();
   const fixture = '../tests/fixtures/fictional-invoice.txt';
   const original = await readFile(fixture);
@@ -355,5 +349,178 @@ test('previews text, JSON, CSV, images and PDF pages safely with keyboard/mobile
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(dialogs).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('shows administrator storage totals, survives metric errors and hides analytics from document managers', async ({
+  page,
+  browser,
+  baseURL,
+}) => {
+  await signIn(page);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const loaded = page.waitForResponse((response) =>
+    response.url().endsWith('/api/admin/storage'),
+  );
+  await page
+    .getByRole('button', { name: 'Storage overview', exact: true })
+    .click();
+  const initial = await (await loaded).json();
+  const overview = page.getByRole('region', { name: 'Storage overview' });
+  const count = overview
+    .getByText('Document count', { exact: true })
+    .locator('..')
+    .locator('dd');
+  await expect(count).toHaveText(initial.documents.count.toLocaleString());
+  if (initial.host_storage) {
+    await expect(
+      overview.getByRole('img', { name: /Mac storage:/ }),
+    ).toBeVisible();
+    await expect(
+      overview.getByText('FamilyVault (estimated)', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      overview.getByText('Other used (estimated)', { exact: true }),
+    ).toBeVisible();
+    const widths = await overview
+      .locator('.storage-bar rect')
+      .evaluateAll((rects) =>
+        rects.map((rect) => Number(rect.getAttribute('width'))),
+      );
+    expect(widths).toHaveLength(4);
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(1000);
+  } else {
+    await expect(overview).toContainText('Host storage is unavailable');
+  }
+  await overview.getByText('Docker volume limits').click();
+  await expect(
+    overview.getByText('Logical document bytes', { exact: true }),
+  ).toBeVisible();
+  if (initial.filesystem.source === 'container-filesystem') {
+    await expect(overview).toContainText(
+      'do not measure the Mac’s physical disk',
+    );
+  }
+  const payload = Buffer.from('Fictional storage count fixture');
+  await page.getByLabel('Choose a fictional document').setInputFiles({
+    name: 'storage-counter.txt',
+    mimeType: 'text/plain',
+    buffer: payload,
+  });
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().endsWith('/api/documents'),
+  );
+  await page.getByRole('button', { name: 'Upload document' }).click();
+  const document = await (await uploaded).json();
+  const refreshed = page.waitForResponse((response) =>
+    response.url().endsWith('/api/admin/storage'),
+  );
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  const current = await (await refreshed).json();
+  expect(current.documents.count).toBe(initial.documents.count + 1);
+  expect(current.documents.logical_bytes).toBe(
+    initial.documents.logical_bytes + payload.length,
+  );
+  await expect(count).toHaveText(current.documents.count.toLocaleString());
+  await page.screenshot({
+    path: 'test-results/storage-desktop.png',
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: 'test-results/storage-mobile.png',
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  // Synthetic provider failure: no capacity numbers, but logical totals remain.
+  await page.route('**/api/admin/storage', (route) =>
+    route.fulfill({
+      json: {
+        ...current,
+        filesystem: { ...current.filesystem, capacity: null },
+      },
+    }),
+  );
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  await expect(overview).toContainText('Filesystem capacity is unavailable');
+  await expect(count).toHaveText(current.documents.count.toLocaleString());
+  await expect(
+    overview.getByText('Volume capacity', { exact: true }),
+  ).toHaveCount(0);
+  await page.unroute('**/api/admin/storage');
+  await page.route('**/api/admin/storage', (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: 'Synthetic metrics failure' },
+    }),
+  );
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  await expect(overview.getByRole('alert')).toHaveText(
+    'Synthetic metrics failure',
+  );
+  await expect(count).toHaveCount(0);
+  await page.unroute('**/api/admin/storage');
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  await expect(count).toBeVisible();
+
+  const session = await (await page.request.get('/api/auth/session')).json();
+  const headers = { 'X-CSRF-Token': session.csrf_token };
+  const created = await page.request.post('/api/admin/users', {
+    headers,
+    data: {
+      username: 'browser-storage-member',
+      password: 'fictional-storage-member-password',
+      is_admin: false,
+    },
+  });
+  expect(created.status()).toBe(201);
+  const member = await created.json();
+  expect(
+    (
+      await page.request.put(
+        `/api/documents/${document.id}/permissions/${member.id}`,
+        { headers, data: { level: 'manage' } },
+      )
+    ).status(),
+  ).toBe(204);
+  const memberContext = await browser.newContext({ baseURL });
+  try {
+    const memberPage = await memberContext.newPage();
+    await signIn(
+      memberPage,
+      'browser-storage-member',
+      'fictional-storage-member-password',
+    );
+    await expect(
+      memberPage.getByRole('link', { name: 'Download storage-counter.txt' }),
+    ).toBeVisible();
+    await expect(
+      memberPage.getByRole('button', { name: 'Storage overview' }),
+    ).toHaveCount(0);
+    const denied = await memberPage.request.get('/api/admin/storage');
+    expect(denied.status()).toBe(403);
+    expect(await denied.json()).toEqual({ error: 'permission denied' });
+  } finally {
+    await memberContext.close();
+  }
+  expect(
+    (
+      await page.request.post('/api/auth/revoke-sessions', { headers })
+    ).status(),
+  ).toBe(204);
+  await overview.getByRole('button', { name: 'Refresh storage' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Storage overview' }),
+  ).toHaveCount(0);
   expect(errors).toEqual([]);
 });
