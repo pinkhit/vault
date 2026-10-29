@@ -59,18 +59,62 @@ it('renders malicious text and filenames literally, reports clipping and provide
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it('shows CSV cells as literal values, including formulas and markup', async () => {
-  vi.mocked(getPreview).mockResolvedValue({
-    kind: 'csv',
-    rows: [['<script>alert(1)</script>', '=SUM(1,2)']],
+it.each(['csv', 'xlsx'] as const)(
+  'shows %s cells as literal values, including formulas and markup',
+  async (kind) => {
+    vi.mocked(getPreview).mockResolvedValue({
+      kind,
+      sheet_name: '<svg onload=alert(1)>',
+      rows: [['<script>alert(1)</script>', '=SUM(1,2)']],
+      truncated: false,
+    });
+    const { container } = render(view());
+    expect(
+      await screen.findByRole('cell', { name: '<script>alert(1)</script>' }),
+    ).toBeVisible();
+    expect(screen.getByRole('cell', { name: '=SUM(1,2)' })).toBeVisible();
+    expect(container.querySelector('script, svg, iframe, object')).toBeNull();
+  },
+);
+
+it('navigates worksheets and clears old cells before the next response', async () => {
+  const first: Preview = {
+    kind: 'xlsx',
+    sheet_name: 'Invoices',
+    rows: [['first sheet']],
+    page: 1,
+    pages: 2,
     truncated: false,
+  };
+  vi.mocked(getPreview).mockResolvedValueOnce(first);
+  let resolve!: (preview: Preview) => void;
+  vi.mocked(getPreview).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  render(view());
+  await screen.findByRole('cell', { name: 'first sheet' });
+  expect(screen.getByRole('button', { name: 'Previous sheet' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Next sheet' }));
+  expect(screen.queryByText('first sheet')).not.toBeInTheDocument();
+  await act(async () => {
+    resolve({
+      ...first,
+      sheet_name: 'Summary',
+      rows: [['second sheet']],
+      page: 2,
+    });
   });
-  const { container } = render(view());
-  expect(
-    await screen.findByRole('cell', { name: '<script>alert(1)</script>' }),
-  ).toBeVisible();
-  expect(screen.getByRole('cell', { name: '=SUM(1,2)' })).toBeVisible();
-  expect(container.querySelector('script, iframe, object')).toBeNull();
+  expect(screen.getByRole('cell', { name: 'second sheet' })).toBeVisible();
+  expect(screen.getByRole('status')).toHaveTextContent('Sheet 2 of 2');
+  expect(screen.getByRole('button', { name: 'Next sheet' })).toBeDisabled();
+  expect(getPreview).toHaveBeenLastCalledWith(
+    document.id,
+    2,
+    expect.any(AbortSignal),
+  );
 });
 
 it('loads PDF pages without embedded PDF content and hides old pages while fetching', async () => {

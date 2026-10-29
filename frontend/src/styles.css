@@ -669,6 +669,12 @@ footer {
 .preview-table {
   overflow: auto;
 }
+.preview-table th {
+  width: 1%;
+  min-width: 0;
+  padding: 12px;
+  vertical-align: top;
+}
 .preview-table td {
   text-align: left;
   min-width: 100px;

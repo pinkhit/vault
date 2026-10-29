@@ -103,13 +103,20 @@ export default function DocumentPreview({
           <>
             {preview.kind === 'text' || preview.kind === 'json' ? (
               <pre className="preview-text">{preview.text}</pre>
-            ) : preview.kind === 'csv' ? (
+            ) : preview.kind === 'csv' || preview.kind === 'xlsx' ? (
               <div className="preview-table">
                 <table>
-                  <caption>CSV rows (values shown as text)</caption>
+                  <caption>
+                    {preview.kind === 'xlsx'
+                      ? `${preview.sheet_name} (values and formulas shown as text)`
+                      : 'CSV rows (values shown as text)'}
+                  </caption>
                   <tbody>
                     {preview.rows?.map((row, index) => (
                       <tr key={index}>
+                        {preview.kind === 'xlsx' && (
+                          <th scope="row">{index + 1}</th>
+                        )}
                         {row.map((cell, column) => (
                           <td key={column}>{cell}</td>
                         ))}
@@ -152,24 +159,25 @@ export default function DocumentPreview({
         >
           Refresh preview
         </button>
-        {preview?.kind === 'pdf' && (
+        {(preview?.kind === 'pdf' || preview?.kind === 'xlsx') && (
           <div className="preview-pages">
             <button
               className="secondary"
               disabled={page <= 1}
               onClick={() => setPage(page - 1)}
             >
-              Previous page
+              {preview.kind === 'xlsx' ? 'Previous sheet' : 'Previous page'}
             </button>
             <span role="status">
-              Page {preview.page} of {preview.pages}
+              {preview.kind === 'xlsx' ? 'Sheet' : 'Page'} {preview.page} of{' '}
+              {preview.pages}
             </span>
             <button
               className="secondary"
               disabled={page >= (preview.pages ?? 1)}
               onClick={() => setPage(page + 1)}
             >
-              Next page
+              {preview.kind === 'xlsx' ? 'Next sheet' : 'Next page'}
             </button>
           </div>
         )}

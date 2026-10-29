@@ -63,7 +63,7 @@ func TestTextTablesAndJSONRemainLiteralAndBounded(t *testing.T) {
 		{"file.html", "<html>active</html>", ErrUnsupported},
 		{"file.svg", "<svg onload='alert(1)'/>", ErrUnsupported},
 		{"file.docx", "PK archive", ErrMalformed},
-		{"file.xlsx", "PK archive", ErrUnsupported},
+		{"file.xlsx", "PK archive", ErrMalformed},
 		{"file.png", "not an image", ErrMalformed},
 		{"file.txt", "a\x00b", ErrUnsupported},
 		{"file.txt", "abc\xff", ErrMalformed},

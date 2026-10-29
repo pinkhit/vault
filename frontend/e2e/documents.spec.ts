@@ -173,7 +173,7 @@ test('searches indexed text safely on desktop/mobile and clears results after re
   expect(errors).toEqual([]);
 });
 
-test('previews text, DOCX, JSON, CSV, images and PDF pages safely with keyboard/mobile support', async ({
+test('previews supported documents safely with keyboard/mobile support', async ({
   page,
 }) => {
   await signIn(page);
@@ -210,6 +210,13 @@ test('previews text, DOCX, JSON, CSV, images and PDF pages safely with keyboard/
       mimeType: 'text/csv',
       buffer: Buffer.from('Name,Value\n"Fictional, Ltd",=SUM(1;2)\n'),
       text: 'Fictional, Ltd',
+    },
+    {
+      name: 'preview <img>.xlsx',
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      buffer: await readFile('../tests/fixtures/fictional-preview.xlsx'),
+      text: '<script>literal XLSX text</script>',
     },
     {
       name: 'preview.png',
@@ -280,6 +287,36 @@ test('previews text, DOCX, JSON, CSV, images and PDF pages safely with keyboard/
         )
         .toBeGreaterThan(0);
       await expect(image).toHaveAttribute('src', /^data:image\/png;base64,/);
+    }
+    if (fixture.name.endsWith('.xlsx')) {
+      await expect(viewer.getByRole('caption')).toContainText('Invoices <img>');
+      await expect(
+        viewer.getByRole('cell', { name: '=SUM(1,2)' }),
+      ).toBeVisible();
+      await expect(viewer.getByRole('status')).toHaveText('Sheet 1 of 2');
+      await viewer.getByRole('button', { name: 'Next sheet' }).click();
+      await expect(
+        viewer.getByRole('cell', { name: 'Fictional XLSX summary 合同' }),
+      ).toBeVisible();
+      await expect(viewer.getByRole('status')).toHaveText('Sheet 2 of 2');
+      await expect(
+        viewer.getByRole('button', { name: 'Next sheet' }),
+      ).toBeDisabled();
+      await page.setViewportSize({ width: 390, height: 844 });
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
+      await page.screenshot({
+        path: 'test-results/xlsx-mobile.png',
+        fullPage: true,
+      });
+      await viewer.getByRole('button', { name: 'Previous sheet' }).click();
+      await expect(
+        viewer.getByRole('cell', { name: '=SUM(1,2)' }),
+      ).toBeVisible();
+      await page.setViewportSize({ width: 1280, height: 720 });
     }
     if (fixture.name === 'preview.pdf') {
       await expect(viewer.getByRole('status')).toHaveText('Page 1 of 2');

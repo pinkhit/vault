@@ -21,13 +21,22 @@ import (
 )
 
 func TestPreviewAuthorizationRevocationAndMetadataPrivacy(t *testing.T) {
-	a, _ := newApp(t, t.TempDir(), 1024)
+	for name, data := range map[string][]byte{
+		"private <img>.docx": testutil.DOCX(t, `<w:p><w:r><w:t>Fictional &lt;script&gt;private-sentinel&lt;/script&gt;</w:t></w:r></w:p>`),
+		"private <img>.xlsx": testutil.ZIP(t, testutil.XLSXParts(`<row><c t="inlineStr"><is><t>Fictional &lt;script&gt;private-sentinel&lt;/script&gt;</t></is></c></row>`)),
+	} {
+		t.Run(name, func(t *testing.T) { checkPreviewReadPermission(t, name, data) })
+	}
+}
+
+func checkPreviewReadPermission(t *testing.T, name string, data []byte) {
+	t.Helper()
+	a, _ := newApp(t, t.TempDir(), 1<<20)
 	owner := createMember(t, a, "preview-owner")
 	reader := createMember(t, a, "preview-reader")
 	ownerID, _ := signIn(t, a, owner.Username, memberPassword, nil)
 	readerID, _ := signIn(t, a, reader.Username, memberPassword, nil)
-	doc := uploadBytesAs(t, a, ownerID, "private <img src=x>.docx", testutil.DOCX(t,
-		`<w:p><w:r><w:t>Fictional &lt;script&gt;private-sentinel&lt;/script&gt;</w:t></w:r></w:p>`))
+	doc := uploadBytesAs(t, a, ownerID, name, data)
 	path := "/api/documents/" + doc.ID + "/preview"
 	handler := a.Handler("")
 	requireStatus(t, jsonRequest(t, handler, "GET", path, "", nil), 401)
@@ -122,6 +131,7 @@ func TestPreviewIntegrityAuditAndOriginalPreservation(t *testing.T) {
 	}{
 		{"unsupported.svg", "<svg onload='alert(1)'/>", 415},
 		{"malformed.docx", "PK synthetic", 422},
+		{"malformed.xlsx", "PK synthetic", 422},
 		{"malformed.json", `{"broken":`, 422},
 		{"oversized.json", strings.Repeat(" ", preview.MaxTextBytes) + "{}", 413},
 	} {

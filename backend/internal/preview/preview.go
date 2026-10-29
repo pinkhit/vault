@@ -24,6 +24,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/pinkhit/vault/backend/internal/docx"
+	"github.com/pinkhit/vault/backend/internal/office"
 )
 
 const (
@@ -55,6 +56,7 @@ type Result struct {
 	Image     []byte     `json:"image,omitempty"` // JSON base64, always a generated PNG.
 	Page      int        `json:"page,omitempty"`
 	Pages     int        `json:"pages,omitempty"`
+	SheetName string     `json:"sheet_name,omitempty"`
 	Truncated bool       `json:"truncated"`
 }
 
@@ -87,6 +89,20 @@ func Render(ctx context.Context, file *os.File, name, mediaType string, size int
 	ext := strings.ToLower(filepath.Ext(name))
 	if ext == ".pdf" && detected == "application/pdf" {
 		return pdf(ctx, file, page)
+	}
+	if ext == ".xlsx" {
+		if detected != "application/zip" {
+			return Result{}, ErrMalformed
+		}
+		result, err := xlsx(ctx, file, size, page)
+		switch {
+		case errors.Is(err, office.ErrMalformed):
+			return Result{}, ErrMalformed
+		case errors.Is(err, office.ErrLimit):
+			return Result{}, ErrLimit
+		default:
+			return result, err
+		}
 	}
 	if page != 1 {
 		return Result{}, ErrPage

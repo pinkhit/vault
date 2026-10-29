@@ -1,6 +1,6 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with search, indexing indicators and read-only previews, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF/DOCX indexing and a permission-aware FTS5 search API. Administrator storage analytics uses SQLite metadata and a cached filesystem provider. DOCX uses the same bounded text reader for indexing and preview; [format limits](docx.md) apply. XLSX, AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with search, indexing indicators and read-only previews, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF/DOCX indexing and a permission-aware FTS5 search API. Administrator storage analytics uses SQLite metadata and a cached filesystem provider. DOCX uses the same bounded text reader for indexing and preview; [format limits](docx.md) apply. [XLSX worksheet previews](xlsx.md) share the Office ZIP/XML reader. AI and remote access remain planned.
 
 Previews reuse document read authorization and confined, checksum-verified storage. The [preview boundary](previews.md) returns escaped text/tables or generated PNGs; PDFs are rasterized by bounded Poppler subprocesses. A shared `pdfutil` runner keeps extraction and preview process limits consistent. No inline original, public object directory, new schema or separate service is introduced.
 

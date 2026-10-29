@@ -33,12 +33,13 @@ export interface DocumentPage {
 }
 
 export interface Preview {
-  kind: 'text' | 'json' | 'csv' | 'image' | 'pdf';
+  kind: 'text' | 'json' | 'csv' | 'image' | 'pdf' | 'xlsx';
   text?: string;
   rows?: string[][];
   image?: string;
   page?: number;
   pages?: number;
+  sheet_name?: string;
   truncated: boolean;
 }
 
