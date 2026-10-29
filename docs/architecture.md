@@ -34,6 +34,8 @@ SQLite uses one pooled connection, foreign keys, a busy timeout, WAL and FULL sy
 
 Every sensitive route requires a database-backed session. Only health/login and static assets are public. Login requires exact same-origin Origin validation; authenticated writes also require a session-bound CSRF token. Account status and role are loaded on each request. Document SQL checks enabled users, administrator authority, ownership or explicit grants before returning metadata/opening files. Mutations recheck rights in their transaction, with an atomic audit event. Raw session tokens live only in HttpOnly cookies; SQLite holds token hashes and expiry/activity timestamps.
 
+Administrator account/audit reads recheck current administrator authority in the same transaction as the metadata query. Audit details identify permission recipients and before/after rights or account role/status changes. Migration 003 preserves old events with empty details and rejects ordinary SQL history updates/deletes; this does not make the database tamper-evident against its owner. Public static files use a separate `os.Root` to confine symlink resolution to the configured web directory.
+
 Read the [authentication/API guide](authentication.md) and [ADR 002](decisions/002-authentication-and-permissions.md) for the permission table, bootstrap and local HTTP exception. Sessions are revocable and have both absolute and idle expiry. No external identity, AI, mail or network service is introduced.
 
 ## Upload and crash consistency

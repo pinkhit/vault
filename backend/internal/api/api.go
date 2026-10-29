@@ -60,11 +60,23 @@ func (a *API) Handler(staticDir string) http.Handler {
 		problem(w, http.StatusNotFound, "endpoint not found")
 	})
 	if staticDir != "" {
-		files := http.FileServer(http.Dir(staticDir))
-		mux.Handle("GET /assets/", files)
-		mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, staticDir+"/index.html")
-		})
+		// http.Dir and ServeFile follow out-of-root symlinks. Open a confined root
+		// per request so its descriptor is closed after synchronous serving ends.
+		serveStatic := func(w http.ResponseWriter, r *http.Request) {
+			root, err := os.OpenRoot(staticDir)
+			if err != nil {
+				a.internal(w, err)
+				return
+			}
+			defer root.Close()
+			if r.URL.Path == "/" {
+				http.ServeFileFS(w, r, root.FS(), "index.html")
+				return
+			}
+			http.FileServerFS(root.FS()).ServeHTTP(w, r)
+		}
+		mux.HandleFunc("GET /assets/", serveStatic)
+		mux.HandleFunc("GET /{$}", serveStatic)
 	}
 	return a.middleware(mux)
 }

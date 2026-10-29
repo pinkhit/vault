@@ -152,7 +152,7 @@ func (a *API) changePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) users(w http.ResponseWriter, r *http.Request) {
-	users, err := a.Auth.Users(r.Context())
+	users, err := a.Auth.Users(r.Context(), sessionFrom(r).User)
 	if err != nil {
 		a.securityError(w, r, err)
 		return
@@ -239,33 +239,53 @@ func (a *API) setGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) auditEvents(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.Documents.DB.QueryContext(r.Context(), `
-        SELECT id, created_at, COALESCE(actor_id, ''), operation, object_id, outcome, request_id
+	tx, err := a.Documents.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	defer tx.Rollback()
+	if err = auth.RequireAdmin(r.Context(), tx, sessionFrom(r).User); err != nil {
+		tx.Rollback() // Release the sole connection before recording a denial.
+		a.securityError(w, r, err)
+		return
+	}
+	rows, err := tx.QueryContext(r.Context(), `
+        SELECT id, created_at, COALESCE(actor_id, ''), operation, object_id, outcome, request_id, details
         FROM audit_events ORDER BY id DESC LIMIT 100`)
 	if err != nil {
 		a.internal(w, err)
 		return
 	}
-	defer rows.Close()
 	type event struct {
-		ID        int64  `json:"id"`
-		CreatedAt int64  `json:"created_at"`
-		ActorID   string `json:"actor_id"`
-		Operation string `json:"operation"`
-		ObjectID  string `json:"object_id"`
-		Outcome   string `json:"outcome"`
-		RequestID string `json:"request_id"`
+		ID        int64           `json:"id"`
+		CreatedAt int64           `json:"created_at"`
+		ActorID   string          `json:"actor_id"`
+		Operation string          `json:"operation"`
+		ObjectID  string          `json:"object_id"`
+		Outcome   string          `json:"outcome"`
+		RequestID string          `json:"request_id"`
+		Details   json.RawMessage `json:"details"`
 	}
 	events := make([]event, 0)
 	for rows.Next() {
 		var item event
-		if err = rows.Scan(&item.ID, &item.CreatedAt, &item.ActorID, &item.Operation, &item.ObjectID, &item.Outcome, &item.RequestID); err != nil {
+		var details string
+		if err = rows.Scan(&item.ID, &item.CreatedAt, &item.ActorID, &item.Operation, &item.ObjectID, &item.Outcome, &item.RequestID, &details); err != nil {
+			rows.Close()
 			a.internal(w, err)
 			return
 		}
+		item.Details = json.RawMessage(details)
 		events = append(events, item)
 	}
 	if err = rows.Err(); err != nil {
+		rows.Close()
+		a.internal(w, err)
+		return
+	}
+	rows.Close()
+	if err = tx.Commit(); err != nil {
 		a.internal(w, err)
 		return
 	}

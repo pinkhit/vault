@@ -118,6 +118,11 @@ func SetGrant(ctx context.Context, db *sql.DB, actor auth.User, documentID, targ
 	if !enabled && level != "" {
 		return sql.ErrNoRows
 	}
+	var previous string
+	err = tx.QueryRowContext(ctx, "SELECT level FROM document_permissions WHERE document_id = ? AND user_id = ?", documentID, targetID).Scan(&previous)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	if level == "" {
 		_, err = tx.ExecContext(ctx, "DELETE FROM document_permissions WHERE document_id = ? AND user_id = ?", documentID, targetID)
 	} else {
@@ -131,7 +136,12 @@ func SetGrant(ctx context.Context, db *sql.DB, actor auth.User, documentID, targ
 	if level == "" {
 		operation = "document.permission.revoke"
 	}
-	if err = audit.Record(ctx, tx, actor.ID, operation, documentID, "allowed"); err != nil {
+	details := audit.Details{
+		TargetUserID:     targetID,
+		PermissionBefore: &previous,
+		PermissionAfter:  &level,
+	}
+	if err = audit.RecordDetails(ctx, tx, actor.ID, operation, documentID, "allowed", details); err != nil {
 		return err
 	}
 	return tx.Commit()

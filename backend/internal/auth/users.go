@@ -47,7 +47,9 @@ func (s *Service) Bootstrap(ctx context.Context, username, password string) (Use
 	return user, nil
 }
 
-func requireAdmin(ctx context.Context, tx *sql.Tx, actor User) error {
+// RequireAdmin checks current authority inside the same transaction as the
+// privileged query or mutation. The middleware's earlier role snapshot is not sufficient.
+func RequireAdmin(ctx context.Context, tx *sql.Tx, actor User) error {
 	var allowed bool
 	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM users WHERE id = ? AND is_admin = 1 AND enabled = 1)", actor.ID).Scan(&allowed); err != nil {
 		return err
@@ -76,7 +78,7 @@ func (s *Service) CreateUser(ctx context.Context, actor User, username, password
 		return User{}, err
 	}
 	defer tx.Rollback()
-	if err = requireAdmin(ctx, tx, actor); err != nil {
+	if err = RequireAdmin(ctx, tx, actor); err != nil {
 		return User{}, err
 	}
 	var exists bool
@@ -123,7 +125,7 @@ func (s *Service) UpdateUser(ctx context.Context, actor User, id string, update 
 		return User{}, err
 	}
 	defer tx.Rollback()
-	if err = requireAdmin(ctx, tx, actor); err != nil {
+	if err = RequireAdmin(ctx, tx, actor); err != nil {
 		return User{}, err
 	}
 	var user User
@@ -133,6 +135,7 @@ func (s *Service) UpdateUser(ctx context.Context, actor User, id string, update 
 	if err != nil {
 		return User{}, err
 	}
+	previousAdmin, previousEnabled := user.IsAdmin, user.Enabled
 	if update.IsAdmin != nil {
 		user.IsAdmin = *update.IsAdmin
 	}
@@ -155,7 +158,15 @@ func (s *Service) UpdateUser(ctx context.Context, actor User, id string, update 
 	if _, err = tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id); err != nil {
 		return User{}, err
 	}
-	if err = audit.Record(ctx, tx, actor.ID, "user.update", id, "allowed"); err != nil {
+	details := audit.Details{
+		TargetUserID:    id,
+		AdminBefore:     &previousAdmin,
+		AdminAfter:      &user.IsAdmin,
+		EnabledBefore:   &previousEnabled,
+		EnabledAfter:    &user.Enabled,
+		PasswordChanged: update.Password != nil,
+	}
+	if err = audit.RecordDetails(ctx, tx, actor.ID, "user.update", id, "allowed", details); err != nil {
 		return User{}, err
 	}
 	if err = tx.Commit(); err != nil {
@@ -164,21 +175,37 @@ func (s *Service) UpdateUser(ctx context.Context, actor User, id string, update 
 	return user, nil
 }
 
-func (s *Service) Users(ctx context.Context) ([]User, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT id, username, is_admin, enabled FROM users ORDER BY username")
+func (s *Service) Users(ctx context.Context, actor User) ([]User, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer tx.Rollback()
+	if err = RequireAdmin(ctx, tx, actor); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT id, username, is_admin, enabled FROM users ORDER BY username")
+	if err != nil {
+		return nil, err
+	}
 	users := make([]User, 0)
 	for rows.Next() {
 		var user User
 		if err = rows.Scan(&user.ID, &user.Username, &user.IsAdmin, &user.Enabled); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		users = append(users, user)
 	}
-	return users, rows.Err()
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (s *Service) ChangePassword(ctx context.Context, actor User, current, next string) error {
