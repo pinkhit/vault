@@ -31,6 +31,22 @@ export interface DocumentPage {
   documents: DocumentRecord[];
   has_more: boolean;
 }
+
+export interface Preview {
+  kind: 'text' | 'json' | 'csv' | 'image' | 'pdf';
+  text?: string;
+  rows?: string[][];
+  image?: string;
+  page?: number;
+  pages?: number;
+  truncated: boolean;
+}
+
+export const getPreview = (id: string, page: number, signal?: AbortSignal) =>
+  request<Preview>(
+    `/api/documents/${encodeURIComponent(id)}/preview?page=${page}`,
+    { signal },
+  );
 export interface Health {
   status: string;
   mode: string;

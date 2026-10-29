@@ -43,6 +43,7 @@ func (a *API) Handler(staticDir string) http.Handler {
 	mux.HandleFunc("GET /api/search", a.protect(a.search))
 	mux.HandleFunc("POST /api/documents", a.protect(a.upload))
 	mux.HandleFunc("GET /api/documents/{id}/download", a.protect(a.download))
+	mux.HandleFunc("GET /api/documents/{id}/preview", a.protect(a.preview))
 	mux.HandleFunc("GET /api/documents/{id}/indexing", a.protect(a.indexingStatus))
 	mux.HandleFunc("PATCH /api/documents/{id}", a.protect(a.rename))
 	mux.HandleFunc("GET /api/documents/{id}/permissions", a.protect(a.grants))

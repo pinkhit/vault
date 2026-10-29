@@ -11,6 +11,7 @@ import {
   SEARCH_PAGE_SIZE,
   searchDocuments,
   type SearchPage,
+  type DocumentRecord,
 } from './api';
 import { formatBytes } from './format';
 import IndexingBadge from './IndexingBadge';
@@ -27,11 +28,13 @@ export default function DocumentSearch({
   revision,
   onUnauthorized,
   onClear,
+  onPreview,
   children,
 }: {
   revision: number;
   onUnauthorized: () => void;
   onClear: () => void;
+  onPreview: (document: DocumentRecord, page?: number) => void;
   children: ReactNode;
 }) {
   const [draft, setDraft] = useState('');
@@ -212,6 +215,13 @@ export default function DocumentSearch({
                     {formatBytes(hit.document.size)}
                   </p>
                   <p className="search-snippet">{hit.snippet}</p>
+                  <button
+                    className="secondary preview-button"
+                    aria-label={`Preview ${hit.document.name}`}
+                    onClick={() => onPreview(hit.document, hit.page)}
+                  >
+                    Preview{hit.page ? ` page ${hit.page}` : ''}
+                  </button>
                 </li>
               ))}
             </ul>

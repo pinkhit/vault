@@ -610,3 +610,72 @@ footer {
     padding: 12px 20px;
   }
 }
+
+.preview-button {
+  margin: 8px 12px 8px 0;
+}
+.preview-dialog {
+  width: min(1000px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid #dfe5dc;
+  border-radius: 12px;
+  color: #243b35;
+}
+.preview-dialog::backdrop {
+  background: #142c24aa;
+}
+.preview-heading,
+.preview-actions,
+.preview-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.preview-heading,
+.preview-actions {
+  justify-content: space-between;
+  padding: 20px;
+}
+.preview-heading > div {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.preview-heading p,
+.preview-note,
+.preview-pages {
+  font-size: 0.8rem;
+}
+.preview-content {
+  padding: 20px;
+  border-block: 1px solid #e7eae3;
+  max-height: 65dvh;
+  overflow: auto;
+}
+.preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.86rem;
+}
+.preview-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.preview-table {
+  overflow: auto;
+}
+.preview-table td {
+  text-align: left;
+  min-width: 100px;
+  max-width: 320px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.preview-note {
+  margin-top: 16px;
+}

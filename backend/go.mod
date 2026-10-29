@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/alexedwards/argon2id v1.0.0
+	golang.org/x/image v0.47.0
 	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.61.0
 )

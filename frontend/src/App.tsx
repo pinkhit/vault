@@ -9,9 +9,11 @@ import {
   uploadDocument,
   type DocumentPage,
   type Health,
+  type DocumentRecord,
 } from './api';
 import DocumentLibrary from './DocumentLibrary';
 import DocumentSearch from './DocumentSearch';
+import DocumentPreview from './DocumentPreview';
 import { formatBytes } from './format';
 import LoginForm from './LoginForm';
 
@@ -100,6 +102,10 @@ function DocumentBrowser({
   const [uploadError, setUploadError] = useState('');
   const [notice, setNotice] = useState('');
   const [signingOut, setSigningOut] = useState(false);
+  const [preview, setPreview] = useState<{
+    document: DocumentRecord;
+    page: number;
+  } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -313,6 +319,7 @@ function DocumentBrowser({
           revision={revision}
           onUnauthorized={onSignOut}
           onClear={refresh}
+          onPreview={(document, page = 1) => setPreview({ document, page })}
         >
           <DocumentLibrary
             page={page}
@@ -321,8 +328,18 @@ function DocumentBrowser({
             error={listError}
             onRefresh={refresh}
             onPageChange={setOffset}
+            onPreview={(document) => setPreview({ document, page: 1 })}
           />
         </DocumentSearch>
+        {preview && (
+          <DocumentPreview
+            key={`${preview.document.id}:${preview.page}`}
+            document={preview.document}
+            initialPage={preview.page}
+            onClose={() => setPreview(null)}
+            onUnauthorized={onSignOut}
+          />
+        )}
         <footer>
           FamilyVault <span>Authenticated local vault · Document search</span>
         </footer>

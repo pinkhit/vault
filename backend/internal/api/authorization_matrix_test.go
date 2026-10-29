@@ -58,6 +58,17 @@ func TestDocumentEndpointAuthorizationMatrix(t *testing.T) {
 		t.Run(actor.name, func(t *testing.T) {
 			path := "/api/documents/" + document.ID
 			for _, method := range []string{"GET", "HEAD"} {
+				response := jsonRequest(t, handler, method, path+"/preview", "", actor.identity)
+				expected := actor.denied
+				if actor.read {
+					expected = 200
+				}
+				requireStatus(t, response, expected)
+				if !actor.read && (strings.Contains(response.Body.String(), document.Name) || response.Header().Get("Content-Disposition") != "") {
+					t.Fatal("preview leaked restricted metadata")
+				}
+			}
+			for _, method := range []string{"GET", "HEAD"} {
 				for _, headers := range []map[string]string{
 					{}, {"Range": "bytes=0-0"}, {"Range": "bytes=999999-"},
 					{"If-None-Match": `"` + document.SHA256 + `"`}, {"If-Modified-Since": "Wed, 01 Jan 2031 00:00:00 GMT"},

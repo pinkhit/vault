@@ -10,6 +10,7 @@ import {
   uploadDocument,
   APIError,
   searchDocuments,
+  getPreview,
 } from './api';
 
 vi.mock('./api', async (importOriginal) => {
@@ -23,6 +24,7 @@ vi.mock('./api', async (importOriginal) => {
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
     searchDocuments: vi.fn(),
+    getPreview: vi.fn(),
   };
 });
 const session = {
@@ -60,6 +62,50 @@ beforeEach(() => {
 });
 
 describe('document browser', () => {
+  it('opens previews from the library and search results, then clears them on session revocation', async () => {
+    vi.mocked(listDocuments).mockResolvedValue({
+      documents: [document],
+      has_more: false,
+    });
+    vi.mocked(getPreview).mockResolvedValue({
+      kind: 'text',
+      text: 'Private preview',
+      truncated: false,
+    });
+    vi.mocked(searchDocuments).mockResolvedValue({
+      results: [
+        { document, snippet: 'Private snippet', match: 'content', page: 2 },
+      ],
+      has_more: false,
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: `Preview ${document.name}` }),
+    );
+    expect(await screen.findByText('Private preview')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Close preview' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox'), {
+      target: { value: 'private' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^Search$/ }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: `Preview ${document.name}` }),
+    );
+    await screen.findByText('Private preview');
+    expect(getPreview).toHaveBeenLastCalledWith(
+      document.id,
+      2,
+      expect.any(AbortSignal),
+    );
+    vi.mocked(getPreview).mockRejectedValue(
+      new APIError('authentication required', 401),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh preview' }));
+    await screen.findByRole('heading', { name: 'Sign in' });
+    expect(screen.queryByText('Private preview')).not.toBeInTheDocument();
+    expect(screen.queryByText('Private snippet')).not.toBeInTheDocument();
+  });
   it('shows the empty state and development warning', async () => {
     render(<App />);
     expect(await screen.findByText('Your library starts here')).toBeVisible();

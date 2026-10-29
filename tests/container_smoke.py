@@ -1,6 +1,7 @@
 """Exercise authentication and original-byte persistence in an isolated Compose project."""
 
 import hashlib
+import base64
 import http.cookiejar
 import json
 import os
@@ -82,6 +83,17 @@ def main():
         document = json.loads(body)
         assert document["sha256"] == checksum
 
+        pdf = Path("tests/fixtures/fictional-preview.pdf").read_bytes()
+        pdf_body = (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="file"; filename="fictional-preview.pdf"\r\n'
+            "Content-Type: application/pdf\r\n\r\n"
+        ).encode() + pdf + f"\r\n--{boundary}--\r\n".encode()
+        status, body, _ = request("POST", "/api/documents", pdf_body,
+                                  "multipart/form-data; boundary=" + boundary)
+        assert status == 201
+        pdf_document = json.loads(body)
+
         run("restart", "app")
         run("up", "-d", "--wait")
         # Docker may reassign an ephemeral host port on restart; cookies are host-bound.
@@ -112,13 +124,25 @@ def main():
         status, downloaded, headers = request("GET", "/api/documents/" + document["id"] + "/download")
         assert status == 200 and downloaded == fixture, "Original bytes changed after restart"
         assert headers["X-Checksum-SHA256"] == checksum
+        preview_path = "/api/documents/" + document["id"] + "/preview"
+        status, body, headers = request("GET", preview_path)
+        assert status == 200 and json.loads(body)["text"] == fixture.decode()
+        assert headers["Cache-Control"] == "no-store" and headers["X-Content-Type-Options"] == "nosniff"
+        status, body, _ = request("GET", "/api/documents/" + pdf_document["id"] + "/preview?page=2")
+        assert status == 200, "PDF raster preview failed in the read-only runtime image"
+        preview = json.loads(body)
+        assert preview["kind"] == "pdf" and preview["page"] == 2 and preview["pages"] == 2
+        assert base64.b64decode(preview["image"], validate=True).startswith(b"\x89PNG\r\n\x1a\n")
+        status, original_pdf, _ = request("GET", "/api/documents/" + pdf_document["id"] + "/download")
+        assert status == 200 and original_pdf == pdf, "PDF preview changed original bytes"
         status, body, _ = request("GET", "/api/documents?limit=100")
         assert status == 200 and any(item["id"] == document["id"] for item in json.loads(body)["documents"])
         assert request("POST", "/api/auth/logout")[0] == 204
         assert request("GET", "/api/documents")[0] == 401
         assert request("GET", indexing_path)[0] == 401
+        assert request("GET", preview_path)[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
-        print("PASS: authenticated files, background indexing/search, restart persistence and logout revocation")
+        print("PASS: authenticated files, background indexing/search, text/PDF previews, restart persistence and logout revocation")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)

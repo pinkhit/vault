@@ -1,4 +1,4 @@
-import type { DocumentPage } from './api';
+import type { DocumentPage, DocumentRecord } from './api';
 import { formatBytes } from './format';
 import IndexingBadge from './IndexingBadge';
 
@@ -9,6 +9,7 @@ interface DocumentLibraryProps {
   error: string;
   onRefresh: () => void;
   onPageChange: (offset: number) => void;
+  onPreview: (document: DocumentRecord) => void;
 }
 
 export default function DocumentLibrary({
@@ -18,6 +19,7 @@ export default function DocumentLibrary({
   error,
   onRefresh,
   onPageChange,
+  onPreview,
 }: DocumentLibraryProps) {
   function renderDocuments() {
     if (error) {
@@ -90,6 +92,13 @@ export default function DocumentLibrary({
                   </time>
                 </td>
                 <td>
+                  <button
+                    className="secondary preview-button"
+                    onClick={() => onPreview(document)}
+                    aria-label={`Preview ${document.name}`}
+                  >
+                    Preview
+                  </button>
                   <a
                     className="download"
                     href={`/api/documents/${document.id}/download`}

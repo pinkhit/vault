@@ -1,6 +1,8 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with document search and indexing indicators, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF indexing and a permission-aware FTS5 search API. Previews, analytics, AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser with search, indexing indicators and read-only previews, password accounts, server-managed sessions, explicit document permissions, audit events, durable background TXT/PDF indexing and a permission-aware FTS5 search API. Analytics, DOCX/XLSX, AI and remote access remain planned.
+
+Previews reuse document read authorization and confined, checksum-verified storage. The [preview boundary](previews.md) returns escaped text/tables or generated PNGs; PDFs are rasterized by bounded Poppler subprocesses. A shared `pdfutil` runner keeps extraction and preview process limits consistent. No inline original, public object directory, new schema or separate service is introduced.
 
 ```mermaid
 flowchart LR

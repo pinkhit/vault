@@ -49,6 +49,7 @@ function view(revision = 0) {
       revision={revision}
       onUnauthorized={onUnauthorized}
       onClear={onClear}
+      onPreview={vi.fn()}
     >
       <p>Library content</p>
     </DocumentSearch>

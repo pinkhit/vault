@@ -1,6 +1,6 @@
 # Document search
 
-`GET /api/search?q=printer&limit=20&offset=0` requires a live session. It searches filenames, metadata and published passages using SQLite FTS5. Checkpoint 5A adds the search interface to the existing document browser. File previews remain a separate reviewable part of Checkpoint 5. No new dependency, external search service, AI or remote access was introduced.
+`GET /api/search?q=printer&limit=20&offset=0` requires a live session. It searches filenames, metadata and published passages using SQLite FTS5. Checkpoint 5A adds the search interface to the existing document browser. Checkpoint 5B adds [authenticated file previews](previews.md) as a separate reviewable change. Search introduces no external service, AI or remote access.
 
 ## Search interface — Checkpoint 5A
 
