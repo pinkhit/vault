@@ -20,7 +20,7 @@ func TestMigrationReopenAndPragmas(t *testing.T) {
 		if err = db.QueryRow("SELECT count(*) FROM schema_migrations").Scan(&versions); err != nil {
 			t.Fatal(err)
 		}
-		if versions != 4 {
+		if versions != 5 {
 			t.Fatalf("migrations: %d", versions)
 		}
 		if err = db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
@@ -137,4 +137,41 @@ func legacyDatabase(t *testing.T, path string, names ...string) *sql.DB {
 		}
 	}
 	return db
+}
+
+func TestPassageMigrationQueuesLegacyDocumentsAndPreservesFailures(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.sqlite")
+	legacy := legacyDatabase(t, path, "001_documents.sql", "002_authentication.sql", "003_audit_details.sql", "004_document_indexing.sql")
+	for _, id := range []string{strings.Repeat("a", 32), strings.Repeat("b", 32), strings.Repeat("d", 32)} {
+		if _, err := legacy.Exec(`INSERT INTO documents(id,name,size,media_type,sha256,created_at)
+            VALUES (?, 'checkpoint.txt', 12, 'text/plain', ?, '2026-01-01T00:00:00Z')`, id, strings.Repeat("c", 64)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := legacy.Exec(`INSERT INTO document_index_jobs(document_id,source_sha256,status,attempts)
+        VALUES (?, ?, 'ready', 2)`, strings.Repeat("a", 32), strings.Repeat("c", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`INSERT INTO document_index_jobs(document_id,source_sha256,status,attempts,last_error)
+        VALUES (?, ?, 'failed', 3, 'previous failure')`, strings.Repeat("b", 32), strings.Repeat("c", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var preserved, backfilled int
+	if err := db.QueryRow("SELECT count(*) FROM document_index_jobs WHERE status='failed' AND attempts=3 AND last_error='previous failure'").Scan(&preserved); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM document_index_jobs WHERE status='pending' AND attempts=0").Scan(&backfilled); err != nil {
+		t.Fatal(err)
+	}
+	if preserved != 1 || backfilled != 2 {
+		t.Fatal("migration lost terminal failures or left unindexed legacy documents")
+	}
 }

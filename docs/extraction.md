@@ -1,6 +1,6 @@
 # Bounded text extraction — Checkpoint 2
 
-The internal `extraction.Extract` helper supports UTF-8 TXT and text-based PDF. It returns plain-text passages with one-based sections and PDF page numbers (TXT uses page zero). It does not enqueue jobs, persist text, expose an endpoint or start a worker. Those connections remain Checkpoint 3. DOCX is deferred to Checkpoint 7; OCR is not implemented.
+The internal `extraction.Extract` helper supports UTF-8 TXT and text-based PDF. It returns plain-text passages with one-based sections and PDF page numbers (TXT uses page zero). The helper itself does not mutate metadata; Checkpoint 3 connects it to the [durable indexing worker](indexing.md), which persists output transactionally. DOCX is deferred to Checkpoint 7; OCR is not implemented.
 
 ## File and resource boundaries
 
@@ -25,13 +25,13 @@ The Linux resource-limit contract is required for PDFs. Native macOS PDF extract
 
 The runtime Docker image installs Alpine `poppler-utils`; GitHub Actions installs Ubuntu's `poppler-utils` before Go tests. No Go dependency was added. Rebuild the image when applying this checkpoint. For Linux-native development, install the distribution's Poppler utilities. Linux PDF tests fail if the dependency is missing; on other operating systems they explicitly skip and must also be run in Docker.
 
-Errors distinguish unsupported formats, malformed/unparseable files, resource bounds, unavailable parser, cancellation/deadline and no extractable text. Storage corruption/missing-file errors remain distinguishable for the future worker. No-text PDFs (including image-only files) need OCR to become searchable; password-protected PDFs are not decrypted. Poppler may repair some damaged PDFs, and layout/font encoding can affect extracted text. There is no claim of perfect PDF validation or layout fidelity.
+Errors distinguish unsupported formats, malformed/unparseable files, resource bounds, unavailable parser, cancellation/deadline and no extractable text. Storage corruption/missing-file errors remain distinguishable for worker failure handling. No-text PDFs (including image-only files) need OCR to become searchable; password-protected PDFs are not decrypted. Poppler may repair some damaged PDFs, and layout/font encoding can affect extracted text. There is no claim of perfect PDF validation or layout fidelity.
 
 Tests use generated synthetic PDFs with valid cross-reference tables. They cover multiple pages/blank pages, malformed PDFs, empty/whitespace text, Unicode chunk boundaries, size/page/passage/output limits, unsupported/spoofed formats, corruption, traversal, symlinks, cancellation, a stalled parser, child resource settings/minimal environment, missing dependencies and diagnostic redaction. No private documents or external PDF-generation service is used.
 
 For an interview, explain why a subprocess permits enforceable parser termination, how input/output/structure limits bound different kinds of work, why extraction releases no authorized HTTP response by itself, and why verified originals and derived passages have separate lifecycles. Resource limits and process separation do not imply a complete security sandbox or exactly-once indexing.
 
-## Checks actually executed
+## Checkpoint 2 checks actually executed
 
 - Go 1.26.10/Linux: formatting, `go vet ./...` and the complete race suite passed; combined statement coverage was **77.5%**. Real PDF tests used Poppler 25.12.0; controlled helper processes verified timeout/overflow termination and inherited limits/environment.
 - Real TXT/PDF integration cases passed again inside the runtime image as UID 10001, with read-only root, dropped capabilities, no new privileges, no network, 512 MiB container memory and the existing no-exec temporary mount. An initial attempt to run the helper-instrumentation tests there failed because their temporary fake executables could not run on `/tmp`; those tests passed in the development image. The mount restriction was preserved and runtime verification selected the real-parser cases.

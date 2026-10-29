@@ -42,6 +42,7 @@ func (a *API) Handler(staticDir string) http.Handler {
 	mux.HandleFunc("GET /api/documents", a.protect(a.list))
 	mux.HandleFunc("POST /api/documents", a.protect(a.upload))
 	mux.HandleFunc("GET /api/documents/{id}/download", a.protect(a.download))
+	mux.HandleFunc("GET /api/documents/{id}/indexing", a.protect(a.indexingStatus))
 	mux.HandleFunc("PATCH /api/documents/{id}", a.protect(a.rename))
 	mux.HandleFunc("GET /api/documents/{id}/permissions", a.protect(a.grants))
 	mux.HandleFunc("PUT /api/documents/{id}/permissions/{userID}", a.protect(a.setGrant))
@@ -121,6 +122,20 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 		docs = docs[:limit]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"documents": docs, "has_more": more})
+}
+
+func (a *API) indexingStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !storage.ValidID(id) {
+		problem(w, http.StatusBadRequest, "invalid document ID")
+		return
+	}
+	progress, err := a.Documents.Indexing(r.Context(), sessionFrom(r).User, id)
+	if err != nil {
+		a.securityError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, progress)
 }
 
 func (a *API) upload(w http.ResponseWriter, r *http.Request) {

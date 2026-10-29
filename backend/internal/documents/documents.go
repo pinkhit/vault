@@ -21,6 +21,7 @@ import (
 	"github.com/pinkhit/vault/backend/internal/audit"
 	"github.com/pinkhit/vault/backend/internal/auth"
 	"github.com/pinkhit/vault/backend/internal/authorization"
+	"github.com/pinkhit/vault/backend/internal/indexing"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
 
@@ -134,6 +135,9 @@ func (s *Service) Upload(ctx context.Context, actor auth.User, name string, read
 	}
 	if inserted != 1 {
 		return Document{}, auth.ErrUnauthenticated
+	}
+	if err = indexing.Enqueue(ctx, tx, document.ID); err != nil {
+		return Document{}, err
 	}
 	if err = audit.Record(ctx, tx, actor.ID, "document.upload", document.ID, "allowed"); err != nil {
 		return Document{}, err

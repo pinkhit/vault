@@ -17,6 +17,7 @@ import (
 	"github.com/pinkhit/vault/backend/internal/config"
 	"github.com/pinkhit/vault/backend/internal/database"
 	"github.com/pinkhit/vault/backend/internal/documents"
+	"github.com/pinkhit/vault/backend/internal/indexing"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
 
@@ -59,6 +60,9 @@ func run(log *slog.Logger) error {
 	if err = service.Recover(context.Background()); err != nil {
 		return err
 	}
+	if _, err = indexing.Recover(context.Background(), db); err != nil {
+		return err
+	}
 	if c.StaticDir != "" {
 		if _, err = os.Stat(filepath.Join(c.StaticDir, "index.html")); err != nil {
 			return fmt.Errorf("frontend build missing: %w", err)
@@ -80,6 +84,18 @@ func run(log *slog.Logger) error {
 	}
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		if err := indexing.NewWorker(db, store, log).Run(workerCtx); err != nil {
+			log.Error("indexing worker stopped")
+		}
+	}()
+	defer func() {
+		stopWorker()
+		<-workerDone
+	}()
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
 	log.Info("authenticated localhost server: synthetic documents only", "address", c.Address)
@@ -90,6 +106,7 @@ func run(log *slog.Logger) error {
 		}
 		return err
 	case <-signalCtx.Done():
+		stopWorker()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		if err = server.Shutdown(shutdownCtx); err != nil {

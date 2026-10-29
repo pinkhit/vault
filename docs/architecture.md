@@ -1,6 +1,6 @@
 # FamilyVault architecture
 
-Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events and standalone bounded TXT/PDF extraction helpers. Background indexing, search, AI and remote access remain planned.
+Implemented: one Go server, embedded SQLite migrations, local file objects, a React browser, password accounts, server-managed sessions, explicit document permissions, audit events and durable background TXT/PDF indexing. Search, previews, analytics, AI and remote access remain planned.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,8 @@ During frontend development, Vite binds `127.0.0.1:5173` and proxies `/api` to `
 - `internal/authorization`: explicit document read/write/manage checks; no folder inheritance yet.
 - `internal/audit`: structured security/document events sharing mutation transactions.
 - `internal/documents`: filenames, metadata queries, checksum comparison, upload coordination.
-- `internal/extraction`: bounded TXT passages and Linux Poppler subprocesses; not connected to uploads or a worker yet. See [extraction limits](extraction.md).
+- `internal/indexing`: persistent jobs, one bounded worker, retries/recovery and transactional passage publication. See [indexing lifecycle](indexing.md).
+- `internal/extraction`: bounded TXT passages and Linux Poppler subprocesses. See [extraction limits](extraction.md).
 - `internal/storage`: confined file operations, staging, syncing, verification and startup cleanup.
 - `internal/database`: SQLite settings and embedded, ordered, transactional migrations.
 - `internal/config`: environment validation and safe bind defaults.
@@ -46,7 +47,7 @@ Read the [authentication/API guide](authentication.md) and [ADR 002](decisions/0
 3. Stream at most the configured maximum plus one byte into `staging/<id>` (0600), computing SHA-256. Reject empty files, read errors, missing closing boundaries and extra parts.
 4. Sync and close the complete staging file. Compare the client checksum when supplied.
 5. Hard-link the file into `objects/<id>` without overwriting an existing object, then sync the object directory. Both directories are on the same local volume.
-6. Recheck that the uploader is enabled and insert complete metadata, ownership and an audit event in one SQLite transaction. Only authorized metadata rows are listed or downloadable; listing filters before pagination.
+6. Recheck that the uploader is enabled and insert complete metadata, ownership, indexing job and audit event in one SQLite transaction. Only authorized metadata rows are listed or downloadable; listing filters before pagination.
 7. Remove the staging name. Cleanup failures are logged; startup retries cleanup.
 
 There is **no atomic transaction spanning SQLite and the filesystem**. Before serving, recovery verifies every referenced object's size and SHA-256, removes staging entries, and removes unreferenced objects. A crash before metadata insertion leaves an invisible orphan. A crash after insertion leaves a complete record, possibly with a redundant staging link. A failed/ambiguous INSERT never triggers immediate object deletion: it could have committed. Recovery uses database state to decide safely.
@@ -59,4 +60,4 @@ A process crash is covered by automated tests. Power-loss durability depends on 
 
 The multi-stage image builds the frontend and a CGO-free Go binary, then runs as UID/GID 10001. A named volume holds **both** the database and objects at `/data`. The root filesystem is read-only, Linux capabilities are dropped, and no privileged mounts are used. The default image build targets the host architecture; the dependency supports Linux AMD64 and ARM64 without a C compiler.
 
-No Ollama, worker, cloud service, or external CDN is involved at runtime. Initial dependency/image downloads require Internet access. Go, React, SQLite and npm dependency versions are recorded in manifests and lockfiles; base images use version tags rather than immutable digests, so image rebuilds can receive upstream changes.
+The Go process runs one indexing worker alongside HTTP handling. PDF extraction uses a resource-limited Poppler child process; extraction holds no database transaction. Derived text stays in private SQLite storage. No Ollama, cloud service or external CDN is involved at runtime. Initial dependency/image downloads require Internet access. Go, React, SQLite and npm dependency versions are recorded in manifests and lockfiles; base images use version tags rather than immutable digests, so image rebuilds can receive upstream changes.

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import time
 import urllib.error
 import urllib.request
 
@@ -85,6 +86,18 @@ def main():
         # Docker may reassign an ephemeral host port on restart; cookies are host-bound.
         base_url = application_url()
         assert request("GET", "/api/auth/session")[0] == 200, "Session did not survive restart"
+        indexing_path = "/api/documents/" + document["id"] + "/indexing"
+        deadline = time.monotonic() + 10
+        while True:
+            status, body, _ = request("GET", indexing_path)
+            assert status == 200, "Indexing status unavailable after restart"
+            progress = json.loads(body)
+            if progress["status"] == "ready":
+                assert progress["attempts"] >= 1
+                break
+            assert progress["status"] in ("pending", "processing"), "Indexing failed"
+            assert time.monotonic() < deadline, "Indexing did not finish"
+            time.sleep(0.1)
         status, downloaded, headers = request("GET", "/api/documents/" + document["id"] + "/download")
         assert status == 200 and downloaded == fixture, "Original bytes changed after restart"
         assert headers["X-Checksum-SHA256"] == checksum
@@ -92,7 +105,8 @@ def main():
         assert status == 200 and any(item["id"] == document["id"] for item in json.loads(body)["documents"])
         assert request("POST", "/api/auth/logout")[0] == 204
         assert request("GET", "/api/documents")[0] == 401
-        print("PASS: authenticated upload/download, checksums, restart persistence and logout revocation")
+        assert request("GET", indexing_path)[0] == 401
+        print("PASS: authenticated upload/download, background indexing, restart persistence and logout revocation")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)

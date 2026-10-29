@@ -20,6 +20,7 @@ const (
 	Ready       Status = "ready"
 	Failed      Status = "failed"
 	Unsupported Status = "unsupported"
+	MaxAttempts        = 3
 )
 
 var (
@@ -81,11 +82,11 @@ func Claim(ctx context.Context, db *sql.DB) (Job, error) {
         WHERE document_id = (
             SELECT j.document_id FROM document_index_jobs j
             JOIN documents d ON d.id = j.document_id AND d.sha256 = j.source_sha256
-            WHERE j.status = 'pending' AND j.available_at <= unixepoch()
+            WHERE j.status = 'pending' AND j.available_at <= unixepoch() AND j.attempts < ?
             ORDER BY j.available_at, j.created_at, j.document_id LIMIT 1
         )
         RETURNING document_id, source_sha256, status, attempts, attempt_token,
-                  last_error, created_at, updated_at, available_at`, hex.EncodeToString(token[:]),
+                  last_error, created_at, updated_at, available_at`, hex.EncodeToString(token[:]), MaxAttempts,
 	).Scan(&job.DocumentID, &job.SourceSHA256, &job.Status, &job.Attempts,
 		&job.AttemptToken, &job.LastError, &job.CreatedAt, &job.UpdatedAt, &job.AvailableAt)
 	return job, err
@@ -109,7 +110,7 @@ func Finish(ctx context.Context, db Executor, job Job, result Result) error {
 		}
 	case Unsupported:
 	case Pending:
-		if result.LastError == "" || result.RetryAt.IsZero() || result.RetryAt.Unix() < 0 {
+		if job.Attempts >= MaxAttempts || result.LastError == "" || result.RetryAt.IsZero() || result.RetryAt.Unix() < 0 {
 			return ErrResult
 		}
 	default:
@@ -147,9 +148,11 @@ func Finish(ctx context.Context, db Executor, job Job, result Result) error {
 func Recover(ctx context.Context, db *sql.DB) (int64, error) {
 	result, err := db.ExecContext(ctx, `
         UPDATE document_index_jobs
-        SET status = 'pending', attempt_token = '', last_error = 'processing interrupted',
+        SET status = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END,
+            attempt_token = '',
+            last_error = CASE WHEN attempts >= ? THEN 'indexing retry limit reached' ELSE 'processing interrupted' END,
             updated_at = unixepoch(), available_at = unixepoch()
-        WHERE status = 'processing'`)
+        WHERE status = 'processing' OR (status = 'pending' AND attempts >= ?)`, MaxAttempts, MaxAttempts, MaxAttempts)
 	if err != nil {
 		return 0, err
 	}
