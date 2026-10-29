@@ -27,6 +27,7 @@ import (
 
 	"github.com/pinkhit/vault/backend/internal/database"
 	"github.com/pinkhit/vault/backend/internal/documents"
+	"github.com/pinkhit/vault/backend/internal/indexing"
 	"github.com/pinkhit/vault/backend/internal/storage"
 )
 
@@ -517,6 +518,43 @@ func TestProcessTerminationRecovery(t *testing.T) {
 	if count(t, a) != 1 {
 		t.Fatal("completed document lost after termination")
 	}
+	var state string
+	if err := a.Documents.DB.QueryRow("SELECT status FROM document_index_jobs").Scan(&state); err != nil || state != "processing" {
+		t.Fatal("helper did not persist an interrupted indexing claim", state, err)
+	}
+	if recovered, err := indexing.Recover(context.Background(), a.Documents.DB); err != nil || recovered != 1 {
+		t.Fatal("crashed claim not recovered", recovered, err)
+	}
+	workCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- indexing.NewWorker(a.Documents.DB, a.Documents.Store, a.Log).Run(workCtx) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var attempts int
+		if err := a.Documents.DB.QueryRow("SELECT status,attempts FROM document_index_jobs").Scan(&state, &attempts); err != nil {
+			t.Fatal(err)
+		}
+		if state == "ready" {
+			if attempts != 2 || len(searchPage(t, a, fixtureIdentity(), `"fictional completed document"`, 20, 0).Results) != 1 {
+				t.Fatal("crash recovery lost indexed content/attempt count")
+			}
+			break
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("crash recovery did not finish")
+		case <-ticker.C:
+		}
+	}
 	for _, sub := range []struct {
 		dir  string
 		want int
@@ -545,6 +583,9 @@ func TestCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := a.Documents.Store.Stage(strings.Repeat("b", 32), strings.NewReader("interrupted upload"), 1024); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := indexing.Claim(context.Background(), a.Documents.DB); err != nil {
 		t.Fatal(err)
 	}
 	os.Exit(0)

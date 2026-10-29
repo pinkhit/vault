@@ -302,6 +302,35 @@ func TestRecoveryEnforcesAttemptBudget(t *testing.T) {
 	}
 }
 
+func TestWorkerShutdownDuringPublicationFailure(t *testing.T) {
+	w := testWorker(t)
+	events := make(eventLog, 1)
+	w.log = slog.New(slog.NewTextHandler(events, nil))
+	if _, err := w.db.Exec(`CREATE TRIGGER block_publication BEFORE INSERT ON document_passages
+        BEGIN SELECT RAISE(FAIL,'synthetic disk failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	workCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- w.Run(workCtx) }()
+	receive(t, (<-chan string)(events))
+	cancel()
+	if err := receive(t, done); err != nil || stored(t, w.db).Status != Processing || passageCount(t, w.db) != 0 {
+		t.Fatal("shutdown published partial data or lost claimed work", err)
+	}
+	if _, err := w.db.Exec("DROP TRIGGER block_publication"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(ctx, w.db); err != nil {
+		t.Fatal(err)
+	}
+	step(t, w)
+	if got := stored(t, w.db); got.Status != Ready || got.Attempts != 2 || passageCount(t, w.db) != 1 {
+		t.Fatal("publication failure did not recover on restart", got)
+	}
+}
+
 func TestWorkerRejectsInvalidExtractorOutput(t *testing.T) {
 	for _, passages := range [][]extraction.Passage{
 		nil, {{Section: 1, Text: " "}}, {{Page: -1, Section: 1, Text: "bad"}},

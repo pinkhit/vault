@@ -52,6 +52,10 @@ func TestTextTablesAndJSONRemainLiteralAndBounded(t *testing.T) {
 	if err != nil || !got.Truncated || len(got.Rows) != MaxRows {
 		t.Fatal("CSV row limit ignored", err)
 	}
+	got, err = render(t, "ragged.csv", []byte("\ufeffName,Value\r\n\"two\r\nlines\"\r\n"), 1)
+	if err != nil || len(got.Rows) != 2 || got.Rows[0][0] != "Name" || len(got.Rows[1]) != 1 || got.Rows[1][0] != "two\nlines" {
+		t.Fatal("CSV BOM, CRLF or ragged quoted row was misread", got, err)
+	}
 	got, err = render(t, "data.json", []byte(`{"html":"<svg onload=alert(1)>","large":12345678901234567890}`), 1)
 	if err != nil || !strings.Contains(got.Text, "\n  ") || !strings.Contains(got.Text, "12345678901234567890") {
 		t.Fatal("JSON formatting changed values", err)

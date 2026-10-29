@@ -16,10 +16,10 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install PDF processing dependencies
+      - name: Install PDF processing and smoke-test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils fonts-dejavu-core
+          sudo apt-get install -y --no-install-recommends poppler-utils fonts-dejavu-core sqlite3
           sudo fc-cache -f
       - name: Check formatting, backend, and race detector
         working-directory: backend

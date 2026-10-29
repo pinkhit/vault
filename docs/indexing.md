@@ -22,6 +22,8 @@ Transient extraction failures retry after 10 and 20 seconds, with at most three 
 
 At startup, `Recover` runs under the storage lock before the listener/worker: it invalidates abandoned tokens, retains attempt counts and requeues interrupted work, or marks exhausted jobs failed. Shutdown cancels extraction/polling and joins the worker before closing SQLite/storage. An unfinished claim survives for restart recovery. This permits repeated extraction after interruption; it does not promise exactly-once work. Originals are preserved regardless of indexing outcome.
 
+[Checkpoint 7 hardening](hardening-milestone-3.md) tests recovery after an actual subprocess exits with a persisted claim, shutdown during failed publication, and container startup from explicitly seeded processing/pending jobs. Earlier checkpoint verification below is historical.
+
 ## Status API
 
 `GET /api/documents/{id}/indexing` requires the current session and document read permission. Its SQL reuses the owner/admin/grant predicate and requires the current source checksum. Permission revocation applies immediately. It returns `status`, `attempts`, `created_at`, `updated_at`, optional `next_attempt_at` and a sanitized `last_error`; no passages, names, checksums or attempt tokens. Missing and unauthorized IDs both return 404 for authenticated users. No public passage endpoint is provided.

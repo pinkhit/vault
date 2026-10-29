@@ -42,7 +42,7 @@ func Open(ctx context.Context, source io.ReaderAt, size int64) (Package, error) 
 	var expanded uint64
 	for _, part := range archive.File {
 		name := strings.TrimSuffix(part.Name, "/")
-		if name == "." || path.Clean(name) != name || strings.HasPrefix(name, "/") ||
+		if name == "." || name == ".." || path.Clean(name) != name || strings.HasPrefix(name, "/") ||
 			strings.HasPrefix(name, "../") || strings.ContainsAny(name, "\\:\x00") ||
 			parts[part.Name] != nil || (!part.Mode().IsRegular() && !part.FileInfo().IsDir()) ||
 			part.Flags&1 != 0 || (part.Method != zip.Store && part.Method != zip.Deflate) {
@@ -186,6 +186,13 @@ func Walk(ctx context.Context, data []byte, root xml.Name, visit func(xml.Token,
 			depth++
 			if depth > 64 {
 				return ErrLimit
+			}
+			attributes := make(map[xml.Name]bool, len(value.Attr))
+			for _, attribute := range value.Attr {
+				if attributes[attribute.Name] {
+					return ErrMalformed
+				}
+				attributes[attribute.Name] = true
 			}
 			if depth == 1 {
 				roots++

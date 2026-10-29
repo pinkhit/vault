@@ -3,17 +3,23 @@
 import hashlib
 import base64
 import http.cookiejar
+import io
 import json
 import os
 from pathlib import Path
 import secrets
 import subprocess
+import tarfile
+import tempfile
 import time
 import urllib.error
 import urllib.request
 
 
 def main():
+    # The host CLI must support the application's STRICT tables (SQLite >=3.37).
+    subprocess.run(["sqlite3", ":memory:", "CREATE TABLE compatibility(n INTEGER) STRICT;"],
+                   check=True, capture_output=True)
     project = "familyvault-smoke-" + secrets.token_hex(4)
     compose = ["docker", "compose", "-p", project]
     environment = dict(
@@ -96,7 +102,58 @@ def main():
         assert status == 201
         pdf_document = json.loads(body)
 
-        run("restart", "app")
+        formats = [
+            ("fictional-preview.docx", Path("tests/fixtures/fictional-preview.docx").read_bytes(), "ready"),
+            ("fictional-preview.xlsx", Path("tests/fixtures/fictional-preview.xlsx").read_bytes(), "unsupported"),
+            ("malformed.docx", b"PK\x03\x04broken synthetic package", "failed"),
+        ]
+        office_documents = []
+        for name, data, expected in formats:
+            payload = (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                'Content-Type: application/octet-stream\r\n\r\n'
+            ).encode() + data + f"\r\n--{boundary}--\r\n".encode()
+            status, body, _ = request("POST", "/api/documents", payload, "multipart/form-data; boundary=" + boundary)
+            assert status == 201
+            office_documents.append(json.loads(body))
+
+        # Seed exact interrupted/pending states offline; timing a live parser
+        # against `docker restart` would make recovery coverage nondeterministic.
+        run("stop", "app")
+        container = run("ps", "-a", "-q", "app", capture_output=True, text=True).stdout.strip()
+        exit_code = subprocess.run(["docker", "inspect", "--format", "{{.State.ExitCode}}", container],
+                                   check=True, capture_output=True, text=True).stdout.strip()
+        assert exit_code == "0", "Server did not shut down cleanly"
+        with tempfile.TemporaryDirectory(prefix="familyvault-smoke-") as snapshot:
+            run("cp", "app:/data/.", snapshot)
+            database = Path(snapshot) / "metadata.sqlite"
+            txt_id, docx_id = document["id"], office_documents[0]["id"]
+            assert all(len(value) == 32 and all(c in "0123456789abcdef" for c in value)
+                       for value in (txt_id, docx_id))
+            sql = f"""
+                PRAGMA wal_checkpoint(TRUNCATE);
+                PRAGMA journal_mode=DELETE;
+                DELETE FROM document_passages WHERE document_id IN ('{txt_id}','{docx_id}');
+                UPDATE document_index_jobs SET status='processing',attempts=1,attempt_token='{'a' * 64}',last_error=''
+                    WHERE document_id='{txt_id}';
+                UPDATE document_index_jobs SET status='pending',attempts=0,attempt_token='',last_error='',available_at=0
+                    WHERE document_id='{docx_id}';
+            """
+            subprocess.run(["sqlite3", str(database)], input=sql, text=True, check=True, capture_output=True)
+            states = subprocess.run(["sqlite3", str(database),
+                f"SELECT status FROM document_index_jobs WHERE document_id='{txt_id}';"
+                f"SELECT status FROM document_index_jobs WHERE document_id='{docx_id}';"],
+                check=True, capture_output=True, text=True).stdout.splitlines()
+            assert states == ["processing", "pending"]
+            archive = io.BytesIO()
+            with tarfile.open(fileobj=archive, mode="w") as tar:
+                info = tarfile.TarInfo("metadata.sqlite")
+                info.uid = info.gid = 10001
+                info.mode, info.size = 0o600, database.stat().st_size
+                with database.open("rb") as source:
+                    tar.addfile(info, source)
+            subprocess.run(["docker", "cp", "-a", "-", container + ":/data/"],
+                           input=archive.getvalue(), check=True)
         run("up", "-d", "--wait")
         # Docker may reassign an ephemeral host port on restart; cookies are host-bound.
         base_url = application_url()
@@ -108,11 +165,36 @@ def main():
             assert status == 200, "Indexing status unavailable after restart"
             progress = json.loads(body)
             if progress["status"] == "ready":
-                assert progress["attempts"] >= 1
+                assert progress["attempts"] == 2, "Interrupted attempt was not recovered"
                 break
             assert progress["status"] in ("pending", "processing"), "Indexing failed"
             assert time.monotonic() < deadline, "Indexing did not finish"
             time.sleep(0.1)
+        for record, (name, original, expected) in zip(office_documents, formats):
+            path = "/api/documents/" + record["id"]
+            deadline = time.monotonic() + 10
+            while True:
+                status, body, _ = request("GET", path + "/indexing")
+                assert status == 200
+                progress = json.loads(body)
+                if progress["status"] == expected:
+                    break
+                assert progress["status"] in ("pending", "processing") and time.monotonic() < deadline
+                time.sleep(0.1)
+            status, downloaded, _ = request("GET", path + "/download")
+            assert status == 200 and downloaded == original, "Office processing altered the original"
+            status, body, _ = request("GET", path + "/preview" + ("?page=2" if name.endswith(".xlsx") else ""))
+            if expected == "failed":
+                assert status == 422, "Malformed DOCX did not fail safely"
+            else:
+                assert status == 200
+                preview = json.loads(body)
+                if name.endswith(".xlsx"):
+                    assert preview["sheet_name"] == "Summary" and preview["rows"][0][0] == "Fictional XLSX summary 合同"
+                else:
+                    assert progress["attempts"] == 1 and "DOCX-BROWSER-2026" in preview["text"]
+                    status, body, _ = request("GET", "/api/search?q=DOCX-BROWSER-2026")
+                    assert status == 200 and json.loads(body)["results"][0]["document"]["id"] == record["id"]
         for query in ("Printer", "DEMO-2026-001", "fictional-invoice"):
             status, body, _ = request("GET", "/api/search?q=" + query)
             assert status == 200, "Search failed after restart"
@@ -140,9 +222,9 @@ def main():
         status, body, headers = request("GET", "/api/admin/storage")
         assert status == 200 and headers["Cache-Control"] == "no-store"
         metrics = json.loads(body)
-        assert metrics["documents"]["count"] == 2
-        assert metrics["documents"]["logical_bytes"] == len(fixture) + len(pdf)
-        assert sum(item["count"] for item in metrics["documents"]["by_type"]) == 2
+        assert metrics["documents"]["count"] == 5
+        assert metrics["documents"]["logical_bytes"] == len(fixture) + len(pdf) + sum(len(data) for _, data, _ in formats)
+        assert sum(item["count"] for item in metrics["documents"]["by_type"]) == 5
         assert metrics["filesystem"]["source"] == "container-filesystem"
         capacity = metrics["filesystem"]["capacity"]
         assert capacity and capacity["total_bytes"] > 0
@@ -155,7 +237,7 @@ def main():
         assert request("GET", preview_path)[0] == 401
         assert request("GET", "/api/admin/storage")[0] == 401
         assert request("GET", "/api/search?q=Printer")[0] == 401
-        print("PASS: authenticated files, indexing/search, text/PDF previews, storage analytics, restart persistence and logout revocation")
+        print("PASS: interrupted/pending indexing recovery, TXT/PDF/DOCX/XLSX previews, malformed-file preservation, search, storage totals and session persistence/revocation")
     finally:
         # Only the randomly named test project is removed, including its synthetic volume.
         subprocess.run(compose + ["down", "--volumes", "--remove-orphans"], env=environment, check=False)

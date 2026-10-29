@@ -62,6 +62,7 @@ func TestMalformedPackagesAndExpansionLimits(t *testing.T) {
 	}{
 		{"missing body part", func(p map[string]string) { delete(p, "word/document.xml") }, ErrMalformed},
 		{"traversal", func(p map[string]string) { p["../outside"] = "private" }, ErrMalformed},
+		{"parent entry", func(p map[string]string) { p[".."] = "private" }, ErrMalformed},
 		{"absolute path", func(p map[string]string) { p["/outside"] = "private" }, ErrMalformed},
 		{"backslash", func(p map[string]string) { p[`word\outside`] = "private" }, ErrMalformed},
 		{"macro type", func(p map[string]string) {
@@ -79,6 +80,9 @@ func TestMalformedPackagesAndExpansionLimits(t *testing.T) {
 		{"multiple roots", func(p map[string]string) { p["word/document.xml"] += p["word/document.xml"] }, ErrMalformed},
 		{"malformed XML", func(p map[string]string) {
 			p["word/document.xml"] = strings.TrimSuffix(p["word/document.xml"], "</w:document>")
+		}, ErrMalformed},
+		{"duplicate attributes", func(p map[string]string) {
+			p["word/document.xml"] = strings.Replace(p["word/document.xml"], "<w:body>", `<w:body mode="first" mode="second">`, 1)
 		}, ErrMalformed},
 		{"wrong namespace", func(p map[string]string) {
 			p["word/document.xml"] = strings.ReplaceAll(p["word/document.xml"], wordNamespace, "urn:unknown")
