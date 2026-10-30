@@ -63,12 +63,61 @@ Deletion uses the reverse ordering: a SQL DELETE checks the enabled owner or adm
 
 A process crash is covered by automated tests. Power-loss durability depends on the host filesystem, Docker volume implementation, storage device and its handling of sync requests. This milestone does not establish production durability or a backup guarantee.
 
+## Upload and search data flow
+
+The sequence below shows the normal successful path. Startup reconciliation and failed or interrupted uploads are described above.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant UI as Browser UI
+    participant API as Go API
+    participant Files as File storage
+    participant DB as SQLite and FTS5
+    participant Worker as Indexing worker
+    User->>UI: Select a document
+    UI->>UI: Compute original SHA-256
+    UI->>API: Upload with session, CSRF token and checksum
+    API->>DB: Validate session and enabled account
+    API->>Files: Stream, hash, sync and publish original
+    API->>DB: Commit metadata, ownership, job and audit event
+    API-->>UI: 201 with stored checksum
+    UI->>UI: Verify checksum and finish progress
+    Worker->>DB: Claim durable indexing job
+    Worker->>Files: Read verified original
+    Worker->>Worker: Extract bounded TXT, PDF or DOCX text
+    Worker->>DB: Publish passages and search entries transactionally
+    User->>UI: Submit words or a quoted phrase
+    UI->>API: Search request with session cookie
+    API->>DB: Filter by current access before ranking and pagination
+    DB-->>API: Authorized matches and snippets
+    API-->>UI: Search results with source references
+```
+
 ## Deployment and portability
 
 The multi-stage image builds the frontend and a CGO-free Go binary, then runs as UID/GID 10001. A named volume holds **both** the database and objects at `/data`. The root filesystem is read-only, Linux capabilities are dropped, and no privileged mounts are used. The default image build targets the host architecture; the dependency supports Linux AMD64 and ARM64 without a C compiler.
 
-The Go process runs one indexing worker alongside HTTP handling. PDF extraction uses a resource-limited Poppler child process; extraction holds no database transaction. Derived text stays in private SQLite storage. No Ollama, cloud service or external CDN is involved at runtime. Initial dependency/image downloads require Internet access. Go, React, SQLite and npm dependency versions are recorded in manifests and lockfiles; base images use version tags rather than immutable digests, so image rebuilds can receive upstream changes.
+The Go process runs one indexing worker alongside HTTP handling. PDF extraction uses a resource-limited Poppler child process; extraction holds no database transaction. Derived text stays in private SQLite storage. No Ollama, cloud document-processing service or external CDN is involved at runtime. Optional Tailscale access uses its control plane to establish private connectivity. Initial dependency/image downloads require Internet access. Go, React, SQLite and npm dependency versions are recorded in manifests and lockfiles; base images use version tags rather than immutable digests, so image rebuilds can receive upstream changes.
 
 [Storage analytics](storage-analytics.md) keeps logical document totals separate from process-visible filesystem capacity. It authorizes administrators in SQLite before grouping metadata and again before audited delivery. Capacity is sampled from a confined directory descriptor outside the database transaction, cached for 30 seconds and reported as unavailable on failure. Docker Desktop values are labelled as container/VM filesystem values, never physical Mac free space.
 
 The storage dashboard now consumes a versioned, fresh numeric snapshot from a native macOS collector through a read-only directory mount. The collector measures the filesystem containing Docker.raw, and the UI separates host used/reclaimable/free space from Docker limits and logical documents. The original/SQLite named volume and their I/O path are unchanged. See [host setup](storage-analytics.md) and [measured layout tradeoffs](storage-performance.md).
+
+## Native development
+
+Native development requires Go 1.26+, Node.js 24 and npm. Stop the Compose app if it occupies port 8080. From the repository root, build the frontend, then bootstrap only a fresh native data directory:
+
+```sh
+cd frontend
+npm ci
+npm run build
+cd ../backend
+SAFEVAULT_DATA_DIR=../data go run ./cmd/create-admin -username admin
+SAFEVAULT_DATA_DIR=../data SAFEVAULT_STATIC_DIR=../frontend/dist go run ./cmd/server
+```
+
+Open `http://localhost:8080`. The ignored `data/` directory is separate from the Docker volume. For frontend hot reload, run Go from `backend/` with `SAFEVAULT_DATA_DIR=../data go run ./cmd/server`, then run `npm run dev` from `frontend/` in another terminal and open `http://127.0.0.1:5173`. Vite proxies `/api` to Go on port 8080. PDF extraction and rendering require the Linux image's Poppler tools.
+
+Browser tests use a fresh synthetic data directory and localhost port 18080. After `npm run build`, install Playwright Chromium with `npx playwright install chromium` and run `npm run test:e2e` from `frontend/`. On a host with a compatible Chrome installation, `PW_CHROME_EXECUTABLE_PATH` can select it instead. Go must be on PATH for the test server.
